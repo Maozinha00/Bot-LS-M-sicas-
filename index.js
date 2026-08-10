@@ -1,6 +1,5 @@
 // =========================================================================
 // 🎵 LS MÚSICAS — BOT DE MÚSICA COMPLETO PARA DISCORD (index.js)
-// Estilo Jockie Music com busca corrigida no YouTube e Spotify
 // =========================================================================
 
 const {
@@ -21,7 +20,6 @@ const { DefaultExtractors } = require('@discord-player/extractor');
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN || "SEU_TOKEN_DO_BOT_AQUI";
 const GUILD_ID = process.env.GUILD_ID || "1535806745816072245";
 
-// Inicializa o Cliente do Discord
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -31,7 +29,7 @@ const client = new Client({
   ]
 });
 
-// Inicializa o Player de Áudio
+// Inicializa o Player
 const player = new Player(client, {
   ytdlOptions: {
     quality: 'highestaudio',
@@ -39,126 +37,103 @@ const player = new Player(client, {
   }
 });
 
-// =========================================================================
-// 🚀 DEFINIÇÃO DOS COMANDOS SLASH (/)
-// =========================================================================
+// 🚀 REGISTRO DOS COMANDOS SLASH
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Toca uma música por nome ou link (YouTube/Spotify)')
+    .setDescription('Toca uma música por nome ou link')
     .addStringOption(option =>
       option.setName('música')
-        .setDescription('Nome ou link da música/playlist')
+        .setDescription('Nome ou link da música')
         .setRequired(true)
     ),
   new SlashCommandBuilder().setName('pause').setDescription('Pausa a música atual'),
-  new SlashCommandBuilder().setName('resume').setDescription('Continua a reprodução da música pausada'),
-  new SlashCommandBuilder().setName('skip').setDescription('Pula para a próxima música da fila'),
-  new SlashCommandBuilder().setName('stop').setDescription('Para a reprodução e sai do canal de voz'),
-  new SlashCommandBuilder().setName('queue').setDescription('Exibe a fila de músicas atual'),
-  new SlashCommandBuilder().setName('nowplaying').setDescription('Mostra a música que está tocando agora'),
+  new SlashCommandBuilder().setName('resume').setDescription('Continua a reprodução'),
+  new SlashCommandBuilder().setName('skip').setDescription('Pula a música'),
+  new SlashCommandBuilder().setName('stop').setDescription('Para e sai do canal'),
+  new SlashCommandBuilder().setName('queue').setDescription('Exibe a fila de músicas'),
+  new SlashCommandBuilder().setName('nowplaying').setDescription('Música atual'),
   new SlashCommandBuilder()
     .setName('volume')
-    .setDescription('Ajusta o volume do bot (0 a 100%)')
+    .setDescription('Ajusta o volume (0 a 100%)')
     .addIntegerOption(option =>
       option.setName('nível')
-        .setDescription('Porcentagem do volume (0 a 100)')
+        .setDescription('Volume (0 a 100)')
         .setRequired(true)
     ),
-  new SlashCommandBuilder().setName('shuffle').setDescription('Embaralha as músicas da fila de espera'),
-  new SlashCommandBuilder().setName('clear').setDescription('Limpa todas as músicas da fila de espera'),
-  new SlashCommandBuilder()
-    .setName('remove')
-    .setDescription('Remove uma música da fila pela posição')
-    .addIntegerOption(option =>
-      option.setName('posição')
-        .setDescription('Número da posição na fila')
-        .setRequired(true)
-    ),
+  new SlashCommandBuilder().setName('shuffle').setDescription('Embaralha a fila'),
+  new SlashCommandBuilder().setName('clear').setDescription('Limpa a fila'),
 ].map(command => command.toJSON());
 
-// =========================================================================
-// ⚙️ EVENTO DE INICIALIZAÇÃO
-// =========================================================================
 client.once('ready', async () => {
+  // 🔍 CARREGA OS EXTRATORES (YouTube, Spotify, etc.)
   try {
-    // Carrega todos os extratores (YouTube, Spotify, Soundcloud, etc)
     await player.extractors.loadDefault();
-    console.log('✅ Extratores de áudio carregados com sucesso!');
+    console.log('✅ Extratores de música carregados com sucesso!');
   } catch (err) {
-    console.log('⚠️ Aviso ao carregar extratores:', err.message);
+    console.log('⚠️ Erro ao carregar extratores:', err.message);
   }
 
   console.log(`\n==================================================`);
-  console.log(`🎵 LS Músicas online com sucesso como ${client.user.tag}!`);
-  console.log(`ID do Servidor Alvo: ${GUILD_ID}`);
+  console.log(`🎵 LS Músicas online como ${client.user.tag}!`);
+  console.log(`Servidor Alvo: ${GUILD_ID}`);
   console.log(`==================================================\n`);
 
   client.user.setActivity('🎵 LS Músicas | /play', { type: 2 });
 
-  // Registrar Comandos Slash
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
   try {
-    console.log('🔄 Registrando comandos Slash (/) no Discord...');
     await rest.put(
       Routes.applicationGuildCommands(client.user.id, GUILD_ID),
       { body: commands }
     );
-    console.log('✅ Comandos Slash registrados com sucesso!');
+    console.log('✅ Comandos Slash registrados!');
   } catch (error) {
-    console.error('❌ Erro ao registrar comandos:', error);
+    console.error('❌ Erro nos comandos:', error);
   }
 });
 
-// =========================================================================
-// 🎛️ GERENCIADOR DE INTERAÇÕES E COMANDOS
-// =========================================================================
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
   const memberVoiceChannel = interaction.member?.voice?.channel;
 
-  // Botões do Painel
   if (interaction.isButton()) {
     const queue = player.nodes.get(interaction.guildId);
     if (!queue || !queue.isPlaying()) {
-      return interaction.reply({ content: '❌ Nenhuma música está tocando no momento!', ephemeral: true });
+      return interaction.reply({ content: '❌ Nenhuma música tocando!', ephemeral: true });
     }
 
     switch (interaction.customId) {
       case 'btn_pause_resume':
         queue.node.pause() ? queue.node.resume() : queue.node.pause();
-        return interaction.reply({ content: queue.node.isPaused() ? '⏸️ Música pausada!' : '▶️ Música retomada!', ephemeral: true });
+        return interaction.reply({ content: queue.node.isPaused() ? '⏸️ Pausado!' : '▶️ Retomado!', ephemeral: true });
       case 'btn_skip':
         queue.node.skip();
         return interaction.reply({ content: '⏭️ Música pulada!', ephemeral: true });
       case 'btn_stop':
         queue.delete();
-        return interaction.reply({ content: '⏹️ Reprodução parada e fila limpa!', ephemeral: true });
+        return interaction.reply({ content: '⏹️ Bot desconectado!', ephemeral: true });
       case 'btn_queue':
         const tracks = queue.tracks.toArray().map((t, i) => `${i + 1}. **${t.title}**`).join('\n');
-        return interaction.reply({ content: `📋 **Fila Atual:**\n${tracks || 'A fila está vazia!'}`, ephemeral: true });
+        return interaction.reply({ content: `📋 **Fila:**\n${tracks || 'Fila vazia!'}`, ephemeral: true });
     }
   }
 
-  // Comandos Slash
   const { commandName } = interaction;
 
   if (commandName === 'play') {
     if (!memberVoiceChannel) {
-      return interaction.reply({ content: '❌ Você precisa entrar em um canal de voz primeiro!', ephemeral: true });
+      return interaction.reply({ content: '❌ Entre em um canal de voz primeiro!', ephemeral: true });
     }
 
     const query = interaction.options.getString('música');
     await interaction.deferReply();
 
     try {
-      // 💡 CORREÇÃO PRINCIPAL: Detecta se é link do Spotify/YouTube ou busca por nome no YouTube
-      const isUrl = query.startsWith('http://') || query.startsWith('https://');
-      const searchEngineType = isUrl ? QueryType.AUTO : QueryType.YOUTUBE_SEARCH;
-
+      // 🎯 BUSCA COM SEARCH ENGINE AUTO/YOUTUBE
       const { track } = await player.play(memberVoiceChannel, query, {
-        searchEngine: searchEngineType,
+        searchEngine: QueryType.AUTO, // Garante que pesquisas por texto como "mc mn" funcionem!
         nodeOptions: {
           metadata: interaction.channel,
           volume: 80,
@@ -168,7 +143,6 @@ client.on('interactionCreate', async interaction => {
         }
       });
 
-      // Embed estilo Jockie Music / LS Músicas
       const embed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle('🎵 LS MÚSICAS — Adicionada à Fila')
@@ -182,7 +156,6 @@ client.on('interactionCreate', async interaction => {
         .setFooter({ text: '🎵 LS Músicas • Bot Oficial' })
         .setTimestamp();
 
-      // Botões Interativos
       const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_pause_resume').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_skip').setEmoji('⏭️').setStyle(ButtonStyle.Primary),
@@ -192,7 +165,7 @@ client.on('interactionCreate', async interaction => {
 
       return interaction.followUp({ embeds: [embed], components: [buttons] });
     } catch (e) {
-      console.error('Erro na reprodução:', e);
+      console.error(e);
       return interaction.followUp({ content: `❌ Erro ao buscar/tocar a música: ${e.message}` });
     }
   }
@@ -202,68 +175,58 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'pause') {
     if (!queue || !queue.isPlaying()) return interaction.reply('❌ Nenhuma música tocando.');
     queue.node.pause();
-    return interaction.reply('⏸️ Reprodução pausada!');
+    return interaction.reply('⏸️ Pausado!');
   }
 
   if (commandName === 'resume') {
     if (!queue || !queue.isPlaying()) return interaction.reply('❌ Nenhuma música pausada.');
     queue.node.resume();
-    return interaction.reply('▶️ Reprodução retomada!');
+    return interaction.reply('▶️ Retomado!');
   }
 
   if (commandName === 'skip') {
     if (!queue || !queue.isPlaying()) return interaction.reply('❌ Nenhuma música para pular.');
     queue.node.skip();
-    return interaction.reply('⏭️ Música pulada para a próxima da fila!');
+    return interaction.reply('⏭️ Pulado!');
   }
 
   if (commandName === 'stop') {
-    if (!queue) return interaction.reply('❌ O bot não está tocando no momento.');
+    if (!queue) return interaction.reply('❌ Bot não está tocando.');
     queue.delete();
-    return interaction.reply('⏹️ Reprodução encerrada e bot desconectado!');
+    return interaction.reply('⏹️ Parado e desconectado!');
   }
 
   if (commandName === 'queue') {
-    if (!queue || queue.tracks.size === 0) return interaction.reply('📋 A fila de espera está vazia.');
-    const tracksList = queue.tracks.toArray().slice(0, 10).map((t, i) => `${i + 1}. **${t.title}** - *${t.author}*`).join('\n');
-    return interaction.reply(`📋 **Fila do LS Músicas (${queue.tracks.size} faixas):**\n\n${tracksList}`);
+    if (!queue || queue.tracks.size === 0) return interaction.reply('📋 Fila vazia.');
+    const tracksList = queue.tracks.toArray().slice(0, 10).map((t, i) => `${i + 1}. **${t.title}**`).join('\n');
+    return interaction.reply(`📋 **Fila (${queue.tracks.size}):**\n\n${tracksList}`);
   }
 
   if (commandName === 'nowplaying') {
-    if (!queue || !queue.currentTrack) return interaction.reply('❌ Nenhuma música tocando agora.');
+    if (!queue || !queue.currentTrack) return interaction.reply('❌ Nenhuma música tocando.');
     const track = queue.currentTrack;
-    return interaction.reply(`🎶 **Tocando Agora:** **${track.title}** de **${track.author}** [${track.duration}]`);
+    return interaction.reply(`🎶 **Tocando Agora:** **${track.title}** [${track.duration}]`);
   }
 
   if (commandName === 'volume') {
-    if (!queue) return interaction.reply('❌ O bot não está ativo em um canal.');
+    if (!queue) return interaction.reply('❌ Bot inativo.');
     const vol = interaction.options.getInteger('nível');
-    if (vol < 0 || vol > 100) return interaction.reply('❌ Escolha um volume entre 0 e 100.');
+    if (vol < 0 || vol > 100) return interaction.reply('❌ Volume entre 0 e 100.');
     queue.node.setVolume(vol);
-    return interaction.reply(`🔊 Volume ajustado para **${vol}%**!`);
+    return interaction.reply(`🔊 Volume: **${vol}%**`);
   }
 
   if (commandName === 'shuffle') {
-    if (!queue || queue.tracks.size < 2) return interaction.reply('❌ É preciso ter pelo menos 2 músicas na fila para embaralhar.');
+    if (!queue || queue.tracks.size < 2) return interaction.reply('❌ Mínimo 2 músicas para embaralhar.');
     queue.tracks.shuffle();
-    return interaction.reply('🔀 Fila de músicas embaralhada com sucesso!');
+    return interaction.reply('🔀 Fila embaralhada!');
   }
 
   if (commandName === 'clear') {
-    if (!queue) return interaction.reply('❌ A fila já está vazia.');
+    if (!queue) return interaction.reply('❌ Fila vazia.');
     queue.tracks.clear();
-    return interaction.reply('🧹 Toda a fila de espera foi limpa!');
-  }
-
-  if (commandName === 'remove') {
-    if (!queue) return interaction.reply('❌ A fila está vazia.');
-    const pos = interaction.options.getInteger('posição');
-    if (pos < 1 || pos > queue.tracks.size) return interaction.reply(`❌ Posição inválida. Escolha entre 1 e ${queue.tracks.size}.`);
-    const removed = queue.tracks.toArray()[pos - 1];
-    queue.node.remove(pos - 1);
-    return interaction.reply(`🗑️ Música **${removed.title}** removida da fila!`);
+    return interaction.reply('🧹 Fila limpa!');
   }
 });
 
-// Conecta o Bot usando o Token configurado
 client.login(DISCORD_TOKEN);
