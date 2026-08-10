@@ -1,6 +1,6 @@
 // =========================================================================
-// 🎵 LS MÚSICAS — BOT DE MÚSICA COMPLETO PARA DISCORD
-// Estilo Jockie Music com Slash Commands (/play, /pause, /queue, /volume, etc)
+// 🎵 LS MÚSICAS — BOT DE MÚSICA COMPLETO PARA DISCORD (index.js)
+// Estilo Jockie Music com busca corrigida no YouTube e Spotify
 // =========================================================================
 
 const {
@@ -14,13 +14,14 @@ const {
   ButtonBuilder,
   ButtonStyle
 } = require('discord.js');
-const { Player } = require('discord-player');
+const { Player, QueryType } = require('discord-player');
+const { DefaultExtractors } = require('@discord-player/extractor');
 
 // 🔑 CONFIGURAÇÃO DO TOKEN E SERVIDOR
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN || 'SEU_TOKEN_DO_BOT_AQUI';
-const GUILD_ID = process.env.GUILD_ID || '1535806745816072245';
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN || "SEU_TOKEN_DO_BOT_AQUI";
+const GUILD_ID = process.env.GUILD_ID || "1535806745816072245";
 
-// Inicializa o Cliente do Discord com os privilégios de Voz e Mensagens
+// Inicializa o Cliente do Discord
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -77,13 +78,15 @@ const commands = [
 ].map(command => command.toJSON());
 
 // =========================================================================
-// ⚙️ EVENTO DE INICIALIZAÇÃO E REGISTRO DE COMANDOS
+// ⚙️ EVENTO DE INICIALIZAÇÃO
 // =========================================================================
 client.once('ready', async () => {
   try {
+    // Carrega todos os extratores (YouTube, Spotify, Soundcloud, etc)
     await player.extractors.loadDefault();
+    console.log('✅ Extratores de áudio carregados com sucesso!');
   } catch (err) {
-    console.log('Aviso extratores:', err.message);
+    console.log('⚠️ Aviso ao carregar extratores:', err.message);
   }
 
   console.log(`\n==================================================`);
@@ -93,7 +96,7 @@ client.once('ready', async () => {
 
   client.user.setActivity('🎵 LS Músicas | /play', { type: 2 });
 
-  // Registrar Comandos Slash no servidor do Discord
+  // Registrar Comandos Slash
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
   try {
     console.log('🔄 Registrando comandos Slash (/) no Discord...');
@@ -115,7 +118,7 @@ client.on('interactionCreate', async interaction => {
 
   const memberVoiceChannel = interaction.member?.voice?.channel;
 
-  // Tratar Cliques nos Botões do Painel Interativo
+  // Botões do Painel
   if (interaction.isButton()) {
     const queue = player.nodes.get(interaction.guildId);
     if (!queue || !queue.isPlaying()) {
@@ -150,7 +153,12 @@ client.on('interactionCreate', async interaction => {
     await interaction.deferReply();
 
     try {
+      // 💡 CORREÇÃO PRINCIPAL: Detecta se é link do Spotify/YouTube ou busca por nome no YouTube
+      const isUrl = query.startsWith('http://') || query.startsWith('https://');
+      const searchEngineType = isUrl ? QueryType.AUTO : QueryType.YOUTUBE_SEARCH;
+
       const { track } = await player.play(memberVoiceChannel, query, {
+        searchEngine: searchEngineType,
         nodeOptions: {
           metadata: interaction.channel,
           volume: 80,
@@ -160,7 +168,7 @@ client.on('interactionCreate', async interaction => {
         }
       });
 
-      // Criar Embed no estilo Jockie Music / LS Músicas
+      // Embed estilo Jockie Music / LS Músicas
       const embed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle('🎵 LS MÚSICAS — Adicionada à Fila')
@@ -184,7 +192,7 @@ client.on('interactionCreate', async interaction => {
 
       return interaction.followUp({ embeds: [embed], components: [buttons] });
     } catch (e) {
-      console.error(e);
+      console.error('Erro na reprodução:', e);
       return interaction.followUp({ content: `❌ Erro ao buscar/tocar a música: ${e.message}` });
     }
   }
