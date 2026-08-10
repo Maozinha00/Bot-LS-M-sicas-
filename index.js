@@ -1,87 +1,99 @@
-// ============================================================
-// 🎵 LS MÚSICAS — BOT DE MÚSICA PARA DISCORD (discord.js v14)
-// ============================================================
+// =========================================================================
+// 🎵 LS MÚSICAS — BOT DE MÚSICA COMPLETO PARA DISCORD
+// Estilo Jockie Music com Slash Commands (/play, /pause, /queue, /volume, etc)
+// =========================================================================
 
-require('dotenv').config();
-const { 
-  Client, 
-  GatewayIntentBits, 
-  EmbedBuilder, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
-  ButtonStyle, 
-  REST, 
-  Routes, 
-  SlashCommandBuilder 
+const {
+  Client,
+  GatewayIntentBits,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require('discord.js');
-const { Player, QueryType } = require('discord-player');
-const { GoogleGenAI } = require('@google/genai');
+const { Player } = require('discord-player');
 
-// Inicialização do Cliente Discord
+// 🔑 CONFIGURAÇÃO DO TOKEN E SERVIDOR
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const GUILD_ID = process.env.GUILD_ID || '1535806745816072245';
+
+
+// Inicializa o Cliente do Discord com os privilégios de Voz e Mensagens
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+    GatewayIntentBits.MessageContent
+  ]
 });
 
-// Inicialização do Player de Áudio
+// Inicializa o Player de Áudio (Suporta YouTube, Spotify, Soundcloud e Links Diretos)
 const player = new Player(client, {
   ytdlOptions: {
     quality: 'highestaudio',
-    highWaterMark: 1 << 25,
-  },
+    highWaterMark: 1 << 25
+  }
 });
 
-// Inicialização do Gemini AI
-const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
-
-// ============================================================
-// REGISTRO DOS COMANDOS SLASH (/)
-// ============================================================
+// =========================================================================
+// 🚀 DEFINIÇÃO DOS COMANDOS SLASH (/)
+// =========================================================================
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Toca uma música por nome ou link')
-    .addStringOption(opt => opt.setName('música').setDescription('Nome ou URL da música').setRequired(true)),
+    .setDescription('Toca uma música por nome ou link (YouTube/Spotify)')
+    .addStringOption(option =>
+      option.setName('música')
+        .setDescription('Nome ou link da música/playlist')
+        .setRequired(true)
+    ),
   new SlashCommandBuilder().setName('pause').setDescription('Pausa a música atual'),
-  new SlashCommandBuilder().setName('resume').setDescription('Retoma a reprodução da música'),
-  new SlashCommandBuilder().setName('skip').setDescription('Pula para a próxima música'),
-  new SlashCommandBuilder().setName('stop').setDescription('Para a música e sai do canal de voz'),
+  new SlashCommandBuilder().setName('resume').setDescription('Continua a reprodução da música pausada'),
+  new SlashCommandBuilder().setName('skip').setDescription('Pula para a próxima música da fila'),
+  new SlashCommandBuilder().setName('stop').setDescription('Para a reprodução e sai do canal de voz'),
   new SlashCommandBuilder().setName('queue').setDescription('Exibe a fila de músicas atual'),
-  new SlashCommandBuilder().setName('nowplaying').setDescription('Mostra a música tocando agora'),
-  new SlashCommandBuilder().setName('loop').setDescription('Alterna o modo de repetição'),
+  new SlashCommandBuilder().setName('nowplaying').setDescription('Mostra a música que está tocando agora'),
   new SlashCommandBuilder()
     .setName('volume')
-    .setDescription('Altera o volume do bot')
-    .addIntegerOption(opt => opt.setName('nível').setDescription('Volume de 0 a 100').setRequired(true)),
-  new SlashCommandBuilder().setName('shuffle').setDescription('Embaralha a fila de músicas'),
-  new SlashCommandBuilder().setName('clear').setDescription('Limpa toda a fila de espera'),
+    .setDescription('Ajusta o volume do bot (0 a 100%)')
+    .addIntegerOption(option =>
+      option.setName('nível')
+        .setDescription('Porcentagem do volume (0 a 100)')
+        .setRequired(true)
+    ),
+  new SlashCommandBuilder().setName('shuffle').setDescription('Embaralha as músicas da fila de espera'),
+  new SlashCommandBuilder().setName('clear').setDescription('Limpa todas as músicas da fila de espera'),
   new SlashCommandBuilder()
     .setName('remove')
-    .setDescription('Remove uma música da fila pelo número')
-    .addIntegerOption(opt => opt.setName('posição').setDescription('Número da posição na fila').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('aidj')
-    .setDescription('Gera um anúncio interativo do DJ usando Inteligência Artificial')
-    .addStringOption(opt => opt.setName('vibe').setDescription('Estilo do anúncio (Ex: Festa, Carioca, Rádio FM)')),
-  new SlashCommandBuilder().setName('lyrics').setDescription('Busca a letra completa da música atual'),
-].map(cmd => cmd.toJSON());
+    .setDescription('Remove uma música da fila pela posição')
+    .addIntegerOption(option =>
+      option.setName('posição')
+        .setDescription('Número da posição na fila')
+        .setRequired(true)
+    ),
+].map(command => command.toJSON());
 
-// ============================================================
-// EVENTO READY & REGISTRO GLOBAL DE COMANDOS
-// ============================================================
+// =========================================================================
+// ⚙️ EVENTO DE INICIALIZAÇÃO E REGISTRO DE COMANDOS
+// =========================================================================
 client.once('ready', async () => {
-  console.log(`\n🎵 LS Músicas está ONLINE como: ${client.user.tag}`);
+  console.log(`\n==================================================`);
+  console.log(`🎵 LS Músicas online com sucesso como ${client.user.tag}!`);
+  console.log(`ID do Servidor Alvo: ${GUILD_ID}`);
+  console.log(`==================================================\n`);
+
   client.user.setActivity('🎵 LS Músicas | /play', { type: 2 });
 
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+  // Registrar Comandos Slash no servidor do Discord
+  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
   try {
-    console.log('🔄 Registrando comandos Slash no Discord...');
+    console.log('🔄 Registrando comandos Slash (/) no Discord...');
     await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID || client.user.id),
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
       { body: commands }
     );
     console.log('✅ Comandos Slash registrados com sucesso!');
@@ -90,179 +102,155 @@ client.once('ready', async () => {
   }
 });
 
-// ============================================================
-// PAINEL DE CONTROLE DE ÁUDIO COM BOTÕES INTERATIVOS
-// ============================================================
-function createMusicEmbed(track, user, queueLength = 0, status = 'Playing') {
-  const embed = new EmbedBuilder()
-    .setColor('#5865F2')
-    .setTitle('🎵 LS MÚSICAS — PAINEL INTERATIVO')
-    .setDescription(`🎶 **Tocando agora:** [${track.title}](${track.url})\n👤 **Pedido por:** ${user.username}`)
-    .addFields(
-      { name: '⏱️ Duração', value: track.duration || '03:30', inline: true },
-      { name: '📋 Fila', value: `${queueLength} músicas`, inline: true },
-      { name: '🔊 Volume', value: '80%', inline: true }
-    )
-    .setThumbnail(track.thumbnail)
-    .setFooter({ text: 'LS Músicas Bot • Digite /play para adicionar mais' });
+// =========================================================================
+// 🎛️ GERENCIADOR DE INTERAÇÕES E COMANDOS
+// =========================================================================
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('btn_pause').setLabel('⏸️ Pausar').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('btn_resume').setLabel('▶️ Continuar').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('btn_skip').setLabel('⏭️ Pular').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('btn_stop').setLabel('⏹️ Parar').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('btn_queue').setLabel('📋 Ver Fila').setStyle(ButtonStyle.Secondary)
-  );
+  const memberVoiceChannel = interaction.member?.voice?.channel;
 
-  return { embeds: [embed], components: [row] };
-}
-
-// ============================================================
-// TRATAMENTO DOS COMANDOS SLASH
-// ============================================================
-client.on('interactionCreate', async (interaction) => {
-  if (interaction.isChatInputCommand()) {
-    const { commandName, member, guild, channel } = interaction;
-    const voiceChannel = member?.voice?.channel;
-
-    if (!voiceChannel && ['play', 'pause', 'resume', 'skip', 'stop', 'volume'].includes(commandName)) {
-      return interaction.reply({ content: '❌ Você precisa estar em um canal de voz!', ephemeral: true });
+  // Tratar Cliques nos Botões do Painel Interativo
+  if (interaction.isButton()) {
+    const queue = player.nodes.get(interaction.guildId);
+    if (!queue || !queue.isPlaying()) {
+      return interaction.reply({ content: '❌ Nenhuma música está tocando no momento!', ephemeral: true });
     }
 
-    // 🎵 /play
-    if (commandName === 'play') {
-      await interaction.deferReply();
-      const query = interaction.options.getString('música');
-
-      try {
-        const searchResult = await player.search(query, {
-          requestedBy: interaction.user,
-          searchEngine: QueryType.AUTO,
-        });
-
-        if (!searchResult || !searchResult.tracks.length) {
-          return interaction.followUp('❌ Nenhum resultado encontrado para sua busca!');
-        }
-
-        const queue = player.nodes.create(guild, {
-          metadata: channel,
-          selfDeaf: true,
-          leaveOnEnd: false,
-          leaveOnEmpty: true,
-          leaveOnEmptyCooldown: 300000, // 5 min
-        });
-
-        if (!queue.connection) await queue.connect(voiceChannel);
-
-        const track = searchResult.tracks[0];
-        queue.addTrack(track);
-
-        if (!queue.isPlaying()) await queue.node.play();
-
-        return interaction.followUp(
-          createMusicEmbed(track, interaction.user, queue.tracks.size)
-        );
-      } catch (err) {
-        console.error(err);
-        return interaction.followUp('❌ Ocorreu um erro ao tentar tocar a música.');
-      }
-    }
-
-    // ⏸️ /pause
-    if (commandName === 'pause') {
-      const queue = player.nodes.get(guild);
-      if (!queue || !queue.isPlaying()) return interaction.reply('❌ Nenhuma música tocando.');
-      queue.node.pause();
-      return interaction.reply('⏸️ Música pausada!');
-    }
-
-    // ▶️ /resume
-    if (commandName === 'resume') {
-      const queue = player.nodes.get(guild);
-      if (!queue) return interaction.reply('❌ Nenhuma música em espera.');
-      queue.node.resume();
-      return interaction.reply('▶️ Reprodução retomada!');
-    }
-
-    // ⏭️ /skip
-    if (commandName === 'skip') {
-      const queue = player.nodes.get(guild);
-      if (!queue || !queue.isPlaying()) return interaction.reply('❌ Nenhuma música tocando.');
-      queue.node.skip();
-      return interaction.reply('⏭️ Música pulada!');
-    }
-
-    // ⏹️ /stop
-    if (commandName === 'stop') {
-      const queue = player.nodes.get(guild);
-      if (queue) queue.delete();
-      return interaction.reply('⏹️ Parado e desconectado do canal de voz!');
-    }
-
-    // 📋 /queue
-    if (commandName === 'queue') {
-      const queue = player.nodes.get(guild);
-      if (!queue || queue.tracks.size === 0) return interaction.reply('📋 A fila está vazia.');
-
-      const tracksList = queue.tracks.toArray().slice(0, 10).map((t, idx) => `${idx + 1}. **${t.title}** - ${t.author}`).join('\n');
-      return interaction.reply(`📋 **Fila de Espera (${queue.tracks.size} músicas):**\n\n${tracksList}`);
-    }
-
-    // 🔊 /volume
-    if (commandName === 'volume') {
-      const vol = interaction.options.getInteger('nível');
-      const queue = player.nodes.get(guild);
-      if (queue) queue.node.setVolume(vol);
-      return interaction.reply(`🔊 Volume ajustado para **${vol}%**`);
-    }
-
-    // 🎙️ /aidj (Gemini AI DJ)
-    if (commandName === 'aidj') {
-      await interaction.deferReply();
-      const vibe = interaction.options.getString('vibe') || 'Festa Animada';
-      const queue = player.nodes.get(guild);
-      const current = queue?.currentTrack;
-
-      if (!ai) {
-        return interaction.followUp('🎵 **LS DJ:** Solta o som galera do server! Toca a braba!');
-      }
-
-      try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
-          contents: `Você é o "LS Músicas", o bot DJ mais animado do Discord!
-Crie uma fala curta (1-2 frases) estilo locutor de rádio ou DJ anunciando a música "${current?.title || 'a próxima música'}" para a galera do servidor com estilo "${vibe}". Use emojis!`,
-        });
-
-        return interaction.followUp(`🎙️ **Anúncio do LS DJ:**\n> ${response.text}`);
-      } catch {
-        return interaction.followUp('🎵 **LS DJ:** Solta o som galera do server!');
-      }
+    switch (interaction.customId) {
+      case 'btn_pause_resume':
+        queue.node.pause() ? queue.node.resume() : queue.node.pause();
+        return interaction.reply({ content: queue.node.isPaused() ? '⏸️ Música pausada!' : '▶️ Música retomada!', ephemeral: true });
+      case 'btn_skip':
+        queue.node.skip();
+        return interaction.reply({ content: '⏭️ Música pulada!', ephemeral: true });
+      case 'btn_stop':
+        queue.delete();
+        return interaction.reply({ content: '⏹️ Reprodução parada e fila limpa!', ephemeral: true });
+      case 'btn_queue':
+        const tracks = queue.tracks.toArray().map((t, i) => `${i + 1}. **${t.title}**`).join('\n');
+        return interaction.reply({ content: `📋 **Fila Atual:**\n${tracks || 'A fila está vazia!'}`, ephemeral: true });
     }
   }
 
-  // 🎛️ TRATAMENTO DOS BOTÕES DO PAINEL
-  if (interaction.isButton()) {
-    const queue = player.nodes.get(interaction.guild);
+  // Comandos Slash
+  const { commandName } = interaction;
 
-    if (interaction.customId === 'btn_pause') {
-      queue?.node.pause();
-      return interaction.reply({ content: '⏸️ Pausado!', ephemeral: true });
+  if (commandName === 'play') {
+    if (!memberVoiceChannel) {
+      return interaction.reply({ content: '❌ Você precisa entrar em um canal de voz primeiro!', ephemeral: true });
     }
-    if (interaction.customId === 'btn_resume') {
-      queue?.node.resume();
-      return interaction.reply({ content: '▶️ Retomado!', ephemeral: true });
+
+    const query = interaction.options.getString('música');
+    await interaction.deferReply();
+
+    try {
+      const { track } = await player.play(memberVoiceChannel, query, {
+        nodeOptions: {
+          metadata: interaction.channel,
+          volume: 80,
+          bufferingTimeout: 3000,
+          leaveOnEnd: false,
+          leaveOnEmpty: true,
+        }
+      });
+
+      // Criar Embed no estilo Jockie Music / LS Músicas
+      const embed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle('🎵 LS MÚSICAS — Adicionada à Fila')
+        .setDescription(`🎶 **[${track.title}](${track.url})**\n👤 Artista: **${track.author}**`)
+        .addFields(
+          { name: '👤 Pedido por', value: `${interaction.user}`, inline: true },
+          { name: '⏱️ Duração', value: `${track.duration}`, inline: true },
+          { name: '🔊 Volume', value: '80%', inline: true }
+        )
+        .setThumbnail(track.thumbnail)
+        .setFooter({ text: '🎵 LS Músicas • Bot Oficial' })
+        .setTimestamp();
+
+      // Botões Interativos ⏮️ ⏸️ ▶️ ⏭️ 📋 ⏹️
+      const buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_pause_resume').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_skip').setEmoji('⏭️').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('btn_queue').setEmoji('📋').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger)
+      );
+
+      return interaction.followUp({ embeds: [embed], components: [buttons] });
+    } catch (e) {
+      console.error(e);
+      return interaction.followUp({ content: `❌ Erro ao buscar/tocar a música: ${e.message}` });
     }
-    if (interaction.customId === 'btn_skip') {
-      queue?.node.skip();
-      return interaction.reply({ content: '⏭️ Pulado!', ephemeral: true });
-    }
-    if (interaction.customId === 'btn_stop') {
-      queue?.delete();
-      return interaction.reply({ content: '⏹️ Parado!', ephemeral: true });
-    }
+  }
+
+  const queue = player.nodes.get(interaction.guildId);
+
+  if (commandName === 'pause') {
+    if (!queue || !queue.isPlaying()) return interaction.reply('❌ Nenhuma música tocando.');
+    queue.node.pause();
+    return interaction.reply('⏸️ Reprodução pausada!');
+  }
+
+  if (commandName === 'resume') {
+    if (!queue || !queue.isPlaying()) return interaction.reply('❌ Nenhuma música pausada.');
+    queue.node.resume();
+    return interaction.reply('▶️ Reprodução retomada!');
+  }
+
+  if (commandName === 'skip') {
+    if (!queue || !queue.isPlaying()) return interaction.reply('❌ Nenhuma música para pular.');
+    queue.node.skip();
+    return interaction.reply('⏭️ Música pulada para a próxima da fila!');
+  }
+
+  if (commandName === 'stop') {
+    if (!queue) return interaction.reply('❌ O bot não está tocando no momento.');
+    queue.delete();
+    return interaction.reply('⏹️ Reprodução encerrada e bot desconectado!');
+  }
+
+  if (commandName === 'queue') {
+    if (!queue || queue.tracks.size === 0) return interaction.reply('📋 A fila de espera está vazia.');
+    const tracksList = queue.tracks.toArray().slice(0, 10).map((t, i) => `${i + 1}. **${t.title}** - *${t.author}*`).join('\n');
+    return interaction.reply(`📋 **Fila do LS Músicas (${queue.tracks.size} faixas):**\n\n${tracksList}`);
+  }
+
+  if (commandName === 'nowplaying') {
+    if (!queue || !queue.currentTrack) return interaction.reply('❌ Nenhuma música tocando agora.');
+    const track = queue.currentTrack;
+    return interaction.reply(`🎶 **Tocando Agora:** **${track.title}** de **${track.author}** [${track.duration}]`);
+  }
+
+  if (commandName === 'volume') {
+    if (!queue) return interaction.reply('❌ O bot não está ativo em um canal.');
+    const vol = interaction.options.getInteger('nível');
+    if (vol < 0 || vol > 100) return interaction.reply('❌ Escolha um volume entre 0 e 100.');
+    queue.node.setVolume(vol);
+    return interaction.reply(`🔊 Volume ajustado para **${vol}%**!`);
+  }
+
+  if (commandName === 'shuffle') {
+    if (!queue || queue.tracks.size < 2) return interaction.reply('❌ É preciso ter pelo menos 2 músicas na fila para embaralhar.');
+    queue.tracks.shuffle();
+    return interaction.reply('🔀 Fila de músicas embaralhada com sucesso!');
+  }
+
+  if (commandName === 'clear') {
+    if (!queue) return interaction.reply('❌ A fila já está vazia.');
+    queue.tracks.clear();
+    return interaction.reply('🧹 Toda a fila de espera foi limpa!');
+  }
+
+  if (commandName === 'remove') {
+    if (!queue) return interaction.reply('❌ A fila está vazia.');
+    const pos = interaction.options.getInteger('posição');
+    if (pos < 1 || pos > queue.tracks.size) return interaction.reply(`❌ Posição inválida. Escolha entre 1 e ${queue.tracks.size}.`);
+    const removed = queue.tracks.toArray()[pos - 1];
+    queue.node.remove(pos - 1);
+    return interaction.reply(`🗑️ Música **${removed.title}** removida da fila!`);
   }
 });
 
-// Login do Bot
-client.login(process.env.DISCORD_BOT_TOKEN);
+// Conecta o Bot usando o Token configurado
+client.login(DISCORD_TOKEN);
