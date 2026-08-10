@@ -1,7 +1,7 @@
-# Usa Node.js 18 Bullseye (suporte nativo a FFmpeg e dependências C++)
+# Use Node.js 18 Bullseye (suporte nativo a FFmpeg e pacotes de áudio)
 FROM node:18-bullseye-slim
 
-# Instala ffmpeg e ferramentas de compilação essenciais para o mediaplex/discord-player
+# Instala ffmpeg e ferramentas de compilação C++
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
@@ -12,7 +12,9 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --only=production
+
+# Instala apenas dependências de produção (Sem o aviso de depreciação)
+RUN npm install --omit=dev
 
 COPY . .
 
