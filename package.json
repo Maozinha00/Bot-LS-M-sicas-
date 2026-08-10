@@ -1,7 +1,6 @@
 {
   "name": "ls-musicas-bot",
   "version": "1.0.0",
-  "description": "Bot de Música LS Músicas para Discord na Railway",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
