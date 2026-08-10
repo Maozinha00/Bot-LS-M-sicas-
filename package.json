@@ -1,17 +1,17 @@
 {
   "name": "ls-musicas-bot",
   "version": "1.0.0",
-  "description": "Bot de Música para Discord 🎵 LS Músicas estilo Jockie Music",
+  "description": "Bot de Música LS Músicas para Discord na Railway",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "discord-player": "^6.6.6",
-    "@discordjs/voice": "^0.16.1",
-    "@google/genai": "^2.4.0",
-    "dotenv": "^16.4.5",
+    "discord-player": "^6.6.10",
+    "@discord-player/extractor": "^6.6.10",
+    "@discord-player/opus": "^0.2.1",
+    "opusscript": "^0.0.8",
     "ffmpeg-static": "^5.2.0"
   }
 }
