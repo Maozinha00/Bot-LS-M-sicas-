@@ -17,9 +17,8 @@ const {
 const { Player } = require('discord-player');
 
 // 🔑 CONFIGURAÇÃO DO TOKEN E SERVIDOR
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN || 'SEU_TOKEN_DO_BOT_AQUI';
 const GUILD_ID = process.env.GUILD_ID || '1535806745816072245';
-
 
 // Inicializa o Cliente do Discord com os privilégios de Voz e Mensagens
 const client = new Client({
@@ -31,7 +30,7 @@ const client = new Client({
   ]
 });
 
-// Inicializa o Player de Áudio (Suporta YouTube, Spotify, Soundcloud e Links Diretos)
+// Inicializa o Player de Áudio
 const player = new Player(client, {
   ytdlOptions: {
     quality: 'highestaudio',
@@ -81,6 +80,12 @@ const commands = [
 // ⚙️ EVENTO DE INICIALIZAÇÃO E REGISTRO DE COMANDOS
 // =========================================================================
 client.once('ready', async () => {
+  try {
+    await player.extractors.loadDefault();
+  } catch (err) {
+    console.log('Aviso extratores:', err.message);
+  }
+
   console.log(`\n==================================================`);
   console.log(`🎵 LS Músicas online com sucesso como ${client.user.tag}!`);
   console.log(`ID do Servidor Alvo: ${GUILD_ID}`);
@@ -169,7 +174,7 @@ client.on('interactionCreate', async interaction => {
         .setFooter({ text: '🎵 LS Músicas • Bot Oficial' })
         .setTimestamp();
 
-      // Botões Interativos ⏮️ ⏸️ ▶️ ⏭️ 📋 ⏹️
+      // Botões Interativos
       const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_pause_resume').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_skip').setEmoji('⏭️').setStyle(ButtonStyle.Primary),
