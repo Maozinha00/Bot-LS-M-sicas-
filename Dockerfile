@@ -1,25 +1,56 @@
-# Use Node.js 18 Bullseye (inclui suporte nativo a FFmpeg e dependências C++)
-FROM node:18-bullseye-slim
+```dockerfile
+# ============================================================
+# 🎵 LS MÚSICAS — Dockerfile
+# Node.js 20 + Debian Bullseye + FFmpeg
+# ============================================================
 
-# Instala ffmpeg e bibliotecas de compilação essenciais para o mediaplex/discord-player
+FROM node:20-bullseye-slim
+
+# ============================================================
+# 📦 Dependências do sistema
+# ============================================================
+
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
     make \
     g++ \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Define o diretório de trabalho
+# ============================================================
+# 📁 Diretório da aplicação
+# ============================================================
+
 WORKDIR /app
 
-# Copia arquivos de dependência
+# ============================================================
+# 📦 Copia arquivos de dependências
+# ============================================================
+
 COPY package*.json ./
 
-# Instala dependências de produção sem avisos de depreciação
+# ============================================================
+# 📥 Instala dependências
+# ============================================================
+
 RUN npm install --omit=dev
 
-# Copia todo o código-fonte
+# ============================================================
+# 📂 Copia o código do bot
+# ============================================================
+
 COPY . .
 
-# Comando de inicialização
+# ============================================================
+# 🎵 Informa ao sistema onde está o FFmpeg
+# ============================================================
+
+ENV FFMPEG_PATH=/usr/bin/ffmpeg
+
+# ============================================================
+# 🚀 Inicia o bot
+# ============================================================
+
 CMD ["node", "index.js"]
+```
