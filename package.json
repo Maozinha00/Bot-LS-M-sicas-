@@ -1,3 +1,4 @@
+```json
 {
   "name": "ls-musicas",
   "version": "1.0.0",
@@ -13,8 +14,10 @@
     "discord.js": "^14.21.0",
     "discord-player": "6.7.1",
     "@discord-player/extractor": "4.5.1",
+    "@discordjs/voice": "^0.19.0",
     "ffmpeg-static": "^5.2.0",
     "dotenv": "^17.2.1",
     "opusscript": "^0.0.8"
   }
 }
+```
