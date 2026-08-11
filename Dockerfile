@@ -1,4 +1,3 @@
-```dockerfile
 # ============================================================
 # 🎵 LS MÚSICAS — Dockerfile
 # Node.js 20 + Debian Bullseye + FFmpeg
@@ -7,7 +6,7 @@
 FROM node:20-bullseye-slim
 
 # ============================================================
-# 📦 Dependências do sistema
+# 📦 Dependências do sistema (FFmpeg nativo + build-essential)
 # ============================================================
 
 RUN apt-get update && apt-get install -y \
@@ -53,4 +52,3 @@ ENV FFMPEG_PATH=/usr/bin/ffmpeg
 # ============================================================
 
 CMD ["node", "index.js"]
-```
