@@ -1,6 +1,7 @@
 // =========================================================================
 // 🎵 LS MÚSICAS — BOT DE MÚSICA COMPLETO PARA DISCORD (index.js)
 // Estilo Jockie Music com Slash Commands (/play, /pause, /queue, /volume, etc)
+// Atualizado com interaction.editReply() e tratamento de erro
 // =========================================================================
 
 const {
@@ -17,7 +18,7 @@ const {
 const { Player, QueryType } = require('discord-player');
 const { DefaultExtractors } = require('@discord-player/extractor');
 
-// Configura o executável do FFMPEG para decodificação de áudio (Essencial para a Railway)
+// Configura o executável do FFMPEG para decodificação de áudio (Essencial para Railway e Cloud)
 try {
   const ffmpegPath = require('ffmpeg-static');
   if (ffmpegPath) process.env.FFMPEG_PATH = ffmpegPath;
@@ -74,7 +75,7 @@ player.events.on('error', (queue, error) => {
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Toca uma música por nome ou link (YouTube/Spotify)')
+    .setDescription('Toca uma música por nome ou link (YouTube/Spotify/SoundCloud)')
     .addStringOption(option =>
       option.setName('música')
         .setDescription('Nome ou link da música/playlist')
@@ -181,14 +182,21 @@ client.on('interactionCreate', async interaction => {
     }
 
     // 🔒 VALIDAÇÃO DE CANAL DE VOZ PERMITIDO
-    if (ALLOWED_VOICE_CHANNEL_ID && memberVoiceChannel.id !== ALLOWED_VOICE_CHANNEL_ID) {
+    if (
+      ALLOWED_VOICE_CHANNEL_ID &&
+      memberVoiceChannel.id !== ALLOWED_VOICE_CHANNEL_ID
+    ) {
       return interaction.reply({
-        content: "❌ Este bot está configurado para entrar e tocar EXCLUSIVAMENTE no canal de voz <#" + ALLOWED_VOICE_CHANNEL_ID + ">!",
+        content:
+          "❌ Este bot está configurado para entrar e tocar EXCLUSIVAMENTE no canal de voz <#" +
+          ALLOWED_VOICE_CHANNEL_ID +
+          ">!",
         ephemeral: true
       });
     }
 
-    const query = interaction.options.getString('música');
+    const query = interaction.options.getString("música");
+
     await interaction.deferReply();
 
     try {
@@ -198,6 +206,7 @@ client.on('interactionCreate', async interaction => {
         searchEngine: QueryType.AUTO
       });
 
+      // 🔎 YouTube
       if (!searchResult.hasTracks()) {
         searchResult = await player.search(query, {
           requestedBy: interaction.user,
@@ -205,6 +214,7 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
+      // 🔎 Spotify
       if (!searchResult.hasTracks()) {
         searchResult = await player.search(query, {
           requestedBy: interaction.user,
@@ -212,6 +222,7 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
+      // 🔎 SoundCloud
       if (!searchResult.hasTracks()) {
         searchResult = await player.search(query, {
           requestedBy: interaction.user,
@@ -219,57 +230,113 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      if (!searchResult.hasTracks() && !query.startsWith('http')) {
-        searchResult = await player.search(query + " musica official audio", {
-          requestedBy: interaction.user,
-          searchEngine: QueryType.YOUTUBE_SEARCH
-        });
+      // 🔎 Busca alternativa no YouTube
+      if (!searchResult.hasTracks() && !query.startsWith("http")) {
+        searchResult = await player.search(
+          query + " musica official audio",
+          {
+            requestedBy: interaction.user,
+            searchEngine: QueryType.YOUTUBE_SEARCH
+          }
+        );
       }
 
+      // ❌ Nenhuma música encontrada
       if (!searchResult.hasTracks()) {
-        return interaction.followUp({
-          content: "❌ Nenhuma música encontrada para: **" + query + "**!\n💡 *Dica: Se o YouTube bloquear buscas no servidor, tente colocar o **Link Direto do Spotify ou SoundCloud**!*"
+        return interaction.editReply({
+          content:
+            "❌ Nenhuma música encontrada para: **" +
+            query +
+            "**!\n\n" +
+            "💡 **Dica:** Se o YouTube bloquear buscas no servidor, " +
+            "tente colocar o **link direto do Spotify ou SoundCloud**."
         });
       }
 
-      const { track } = await player.play(memberVoiceChannel, searchResult, {
-        nodeOptions: {
-          metadata: interaction.channel,
-          volume: 80,
-          bufferingTimeout: 15000,
-          leaveOnEnd: false,
-          leaveOnEmpty: true,
-          leaveOnStop: true,
-          selfDeaf: true,
+      // 🎵 Iniciar reprodução
+      const { track } = await player.play(
+        memberVoiceChannel,
+        searchResult,
+        {
+          nodeOptions: {
+            metadata: interaction.channel,
+            volume: 80,
+            bufferingTimeout: 15000,
+            leaveOnEnd: false,
+            leaveOnEmpty: true,
+            leaveOnStop: true,
+            selfDeaf: true
+          }
         }
-      });
-
-      // Criar Embed no estilo Jockie Music / LS Músicas
-      const embed = new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('🎵 LS MÚSICAS — Adicionada à Fila')
-        .setDescription("🎶 **[" + track.title + "](" + track.url + ")**\n👤 Artista: **" + track.author + "**")
-        .addFields(
-          { name: '👤 Pedido por', value: "" + interaction.user, inline: true },
-          { name: '⏱️ Duração', value: "" + track.duration, inline: true },
-          { name: '🔊 Volume', value: '80%', inline: true }
-        )
-        .setThumbnail(track.thumbnail)
-        .setFooter({ text: '🎵 LS Músicas • Bot Oficial' })
-        .setTimestamp();
-
-      // Botões Interativos
-      const buttons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_pause_resume').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_skip').setEmoji('⏭️').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('btn_queue').setEmoji('📋').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger)
       );
 
-      return interaction.followUp({ embeds: [embed], components: [buttons] });
+      // 🎨 Embed estilo Jockie Music / LS Músicas
+      const embed = new EmbedBuilder()
+        .setColor("#5865F2")
+        .setTitle("🎵 LS MÚSICAS — Adicionada à Fila")
+        .setDescription(
+          `🎶 **[${track.title}](${track.url})**\n` +
+          `👤 Artista: **${track.author}**`
+        )
+        .addFields(
+          {
+            name: "👤 Pedido por",
+            value: `${interaction.user}`,
+            inline: true
+          },
+          {
+            name: "⏱️ Duração",
+            value: `${track.duration}`,
+            inline: true
+          },
+          {
+            name: "🔊 Volume",
+            value: "80%",
+            inline: true
+          }
+        )
+        .setThumbnail(track.thumbnail)
+        .setFooter({
+          text: "🎵 LS Músicas • Bot Oficial"
+        })
+        .setTimestamp();
+
+      // 🎛️ Botões interativos
+      const buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("btn_pause_resume")
+          .setEmoji("⏸️")
+          .setStyle(ButtonStyle.Secondary),
+
+        new ButtonBuilder()
+          .setCustomId("btn_skip")
+          .setEmoji("⏭️")
+          .setStyle(ButtonStyle.Primary),
+
+        new ButtonBuilder()
+          .setCustomId("btn_queue")
+          .setEmoji("📋")
+          .setStyle(ButtonStyle.Secondary),
+
+        new ButtonBuilder()
+          .setCustomId("btn_stop")
+          .setEmoji("⏹️")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      return interaction.editReply({
+        embeds: [embed],
+        components: [buttons]
+      });
+
     } catch (e) {
-      console.error(e);
-      return interaction.followUp({ content: "❌ Erro ao buscar/tocar a música: " + e.message });
+      console.error("❌ Erro no sistema de música:", e);
+
+      return interaction.editReply({
+        content:
+          "❌ **Erro ao buscar/tocar a música!**\n" +
+          `\`${e.message}\``
+      });
     }
   }
 
