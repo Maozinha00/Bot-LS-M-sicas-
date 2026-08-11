@@ -58,14 +58,22 @@ player.events.on('playerStart', (queue, track) => {
 player.events.on('playerError', (queue, error, track) => {
   console.error("❌ [Player Error] Erro ao decodificar/tocar:", error);
   if (queue.metadata && queue.metadata.send) {
-    queue.metadata.send("⚠️ **Erro na reprodução de áudio:** " + error.message);
+    queue.metadata.send("⚠️ **Erro na reprodução de áudio:** " + (error.message || error));
   }
 });
 
 player.events.on('error', (queue, error) => {
   console.error("❌ [Queue Error] Erro na fila/conexão:", error);
+  if (error.name === 'AbortError' || error.code === 'ABORT_ERR' || error.message?.includes('aborted')) {
+    console.log('💡 [Dica de Conexão] O Discord demorou para responder ao handshake de áudio (UDP). Tentando manter a conexão.');
+  }
   if (queue.metadata && queue.metadata.send) {
-    queue.metadata.send("⚠️ **Erro de conexão de voz:** " + error.message);
+    const isAbort = error.name === 'AbortError' || error.code === 'ABORT_ERR' || error.message?.includes('aborted');
+    queue.metadata.send(
+      isAbort 
+        ? "⚠️ **Erro de Conexão de Voz (Timeout):** O servidor do Discord demorou para responder à conexão UDP. Tente digitar '/play' novamente."
+        : "⚠️ **Erro de conexão de voz:** " + error.message
+    );
   }
 });
 
@@ -261,9 +269,11 @@ client.on('interactionCreate', async interaction => {
           nodeOptions: {
             metadata: interaction.channel,
             volume: 80,
-            bufferingTimeout: 15000,
+            bufferingTimeout: 30000,
+            connectionTimeout: 30000, // ⏱️ Previne AbortError dando 30s para o handshake UDP do Discord
             leaveOnEnd: false,
             leaveOnEmpty: true,
+            leaveOnEmptyCooldown: 30000,
             leaveOnStop: true,
             selfDeaf: true
           }
