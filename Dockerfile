@@ -1,6 +1,7 @@
-# Dockerfile otimizado para Railway para o LS Músicas
+# Dockerfile Otimizado para Railway — LS MÚSICAS
 FROM node:20-slim
-# Instala dependências de áudio e compilação do sistema (FFmpeg e Python para native addons)
+
+# Instala dependências do sistema para suporte de áudio e compilação nativa (FFmpeg e Python)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
@@ -8,9 +9,19 @@ RUN apt-get update && apt-get install -y \
     g++ \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
+
+# Copia os arquivos de manifesto do pacote
 COPY package*.json ./
-RUN npm ci --only=production
+
+# Usa 'npm install --omit=dev' em vez de 'npm ci' para garantir build sem erros
+RUN npm install --omit=dev
+
+# Copia o código-fonte
 COPY . .
+
 ENV NODE_ENV=production
+
+# Comando para iniciar o bot
 CMD ["node", "index.js"]
