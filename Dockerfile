@@ -1,14 +1,6 @@
-# ============================================================
-# 🎵 LS MÚSICAS — Dockerfile
-# Node.js 20 + Debian Bullseye + FFmpeg
-# ============================================================
-
-FROM node:20-bullseye-slim
-
-# ============================================================
-# 📦 Dependências do sistema (FFmpeg nativo + build-essential)
-# ============================================================
-
+# Dockerfile otimizado para Railway para o LS Músicas
+FROM node:20-slim
+# Instala dependências de áudio e compilação do sistema (FFmpeg e Python para native addons)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
@@ -16,39 +8,9 @@ RUN apt-get update && apt-get install -y \
     g++ \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-
-# ============================================================
-# 📁 Diretório da aplicação
-# ============================================================
-
 WORKDIR /app
-
-# ============================================================
-# 📦 Copia arquivos de dependências
-# ============================================================
-
 COPY package*.json ./
-
-# ============================================================
-# 📥 Instala dependências
-# ============================================================
-
-RUN npm install --omit=dev
-
-# ============================================================
-# 📂 Copia o código do bot
-# ============================================================
-
+RUN npm ci --only=production
 COPY . .
-
-# ============================================================
-# 🎵 Informa ao sistema onde está o FFmpeg
-# ============================================================
-
-ENV FFMPEG_PATH=/usr/bin/ffmpeg
-
-# ============================================================
-# 🚀 Inicia o bot
-# ============================================================
-
+ENV NODE_ENV=production
 CMD ["node", "index.js"]
