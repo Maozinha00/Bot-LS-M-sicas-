@@ -9,6 +9,7 @@
  * - Suporte a pesquisa por nome e links (YouTube / Spotify / SoundCloud)
  * - Registro automático de Slash Commands na guild configurada
  */
+
 const { 
   Client, 
   GatewayIntentBits, 
@@ -23,15 +24,19 @@ const {
 } = require('discord.js');
 const { Player, QueryType, QueueRepeatMode } = require('discord-player');
 const { DefaultExtractors } = require('@discord-player/extractor');
+
 // Carrega variáveis de ambiente
 require('dotenv').config();
+
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
+
 if (!TOKEN) {
   console.error('❌ ERRO CRÍTICO: DISCORD_TOKEN não foi configurado nas variáveis de ambiente!');
   process.exit(1);
 }
+
 // Inicializa o Client do Discord com as intenções necessárias
 const client = new Client({
   intents: [
@@ -41,13 +46,18 @@ const client = new Client({
     GatewayIntentBits.MessageContent
   ]
 });
+
 // Inicializa o Discord Player para gerenciamento de áudio
 const player = new Player(client, {
   ytdlOptions: {
     quality: 'highestaudio',
-    highWaterMark: 1 << 25
+    highWaterMark: 1 << 25,
+    filter: 'audioonly',
+    liveBuffer: 60000,
+    dlChunkSize: 0
   }
 });
+
 // Registra os extratores padrão (YouTube, Spotify, SoundCloud, Apple Music)
 async function setupPlayer() {
   try {
@@ -57,6 +67,7 @@ async function setupPlayer() {
     console.warn('⚠️ Aviso no carregamento dos extratores:', err.message);
   }
 }
+
 // Definição dos Comandos Slash no Estilo Jockie Music
 const commands = [
   new SlashCommandBuilder()
@@ -67,24 +78,31 @@ const commands = [
         .setDescription('Nome da música, artista ou link da playlist')
         .setRequired(true)
     ),
+
   new SlashCommandBuilder()
     .setName('pause')
     .setDescription('Pausa a reprodução da música atual'),
+
   new SlashCommandBuilder()
     .setName('resume')
     .setDescription('Retoma a reprodução da música pausada'),
+
   new SlashCommandBuilder()
     .setName('skip')
     .setDescription('Pula a música atual'),
+
   new SlashCommandBuilder()
     .setName('stop')
     .setDescription('Para a música, limpa a fila e sai do canal de voz'),
+
   new SlashCommandBuilder()
     .setName('queue')
     .setDescription('Exibe a fila de músicas atual'),
+
   new SlashCommandBuilder()
     .setName('nowplaying')
     .setDescription('Exibe detalhes e o painel de controles da música atual'),
+
   new SlashCommandBuilder()
     .setName('volume')
     .setDescription('Ajusta o volume do bot (0 a 100)')
@@ -95,12 +113,15 @@ const commands = [
         .setMinValue(0)
         .setMaxValue(100)
     ),
+
   new SlashCommandBuilder()
     .setName('shuffle')
     .setDescription('Embaralha a ordem das músicas na fila'),
+
   new SlashCommandBuilder()
     .setName('clear')
     .setDescription('Esvazia todas as músicas da fila (exceto a atual)'),
+
   new SlashCommandBuilder()
     .setName('loop')
     .setDescription('Alterna o modo de repetição (Desativado / Música / Fila)')
@@ -114,6 +135,7 @@ const commands = [
           { name: 'Repetir Fila Inteira', value: 'queue' }
         )
     ),
+
   new SlashCommandBuilder()
     .setName('remove')
     .setDescription('Remove uma música específica da fila pelo número')
@@ -124,6 +146,7 @@ const commands = [
         .setMinValue(1)
     )
 ].map(command => command.toJSON());
+
 // Criação do Painel Interativo de Botões do Jockie Music
 function createControlButtons(queue) {
   const row1 = new ActionRowBuilder().addComponents(
@@ -148,6 +171,7 @@ function createControlButtons(queue) {
       .setEmoji(queue.repeatMode === QueueRepeatMode.TRACK ? '🔂' : queue.repeatMode === QueueRepeatMode.QUEUE ? '🔁' : '➡️')
       .setStyle(queue.repeatMode !== QueueRepeatMode.OFF ? ButtonStyle.Success : ButtonStyle.Secondary)
   );
+
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('btn_vol_down')
@@ -166,8 +190,10 @@ function createControlButtons(queue) {
       .setEmoji('🗑️')
       .setStyle(ButtonStyle.Secondary)
   );
+
   return [row1, row2];
 }
+
 // Constrói o Embed Estilo Jockie Music para Now Playing
 function createNowPlayingEmbed(track, queue) {
   const currentVolume = queue.node.volume;
@@ -176,6 +202,7 @@ function createNowPlayingEmbed(track, queue) {
     : queue.repeatMode === QueueRepeatMode.QUEUE 
     ? '🔁 Fila' 
     : '❌ Desativado';
+
   return new EmbedBuilder()
     .setColor('#5865F2')
     .setAuthor({ 
@@ -194,42 +221,49 @@ function createNowPlayingEmbed(track, queue) {
     .setFooter({ text: 'LS Músicas • Estilo Jockie Music • Sistema de Alta Qualidade', iconURL: client.user.displayAvatarURL() })
     .setTimestamp();
 }
+
 // Eventos do Player do Discord
 player.events.on('playerStart', (queue, track) => {
   const embed = createNowPlayingEmbed(track, queue);
   const components = createControlButtons(queue);
+
   if (queue.metadata && queue.metadata.channel) {
     queue.metadata.channel.send({
       embeds: [embed],
       components: components
     }).then(msg => {
-      // Registrar coletor de botões interativo
       const collector = msg.createMessageComponentCollector({
         componentType: ComponentType.Button,
         time: track.durationMS > 0 ? track.durationMS : 300000
       });
+
       collector.on('collect', async (interaction) => {
-        // Verificar se usuário está no mesmo canal de voz
         if (!interaction.member.voice.channel || interaction.member.voice.channel.id !== queue.channel.id) {
           return interaction.reply({ content: '❌ Você precisa estar no mesmo canal de voz que o bot para usar os controles!', flags: 64 });
         }
+
         await interaction.deferUpdate();
+
         switch (interaction.customId) {
           case 'btn_pause_resume':
             queue.node.togglePause();
             break;
+
           case 'btn_skip':
             queue.node.skip();
             interaction.followUp({ content: '⏭️ Música pulada com sucesso!', flags: 64 });
             break;
+
           case 'btn_stop':
             queue.delete();
             interaction.followUp({ content: '⏹️ Reprodução parada e fila limpa!', flags: 64 });
             break;
+
           case 'btn_shuffle':
             queue.tracks.shuffle();
             interaction.followUp({ content: '🔀 Fila embaralhada!', flags: 64 });
             break;
+
           case 'btn_loop':
             const nextMode = queue.repeatMode === QueueRepeatMode.OFF 
               ? QueueRepeatMode.TRACK 
@@ -239,63 +273,88 @@ player.events.on('playerStart', (queue, track) => {
             queue.setRepeatMode(nextMode);
             interaction.followUp({ content: `🔁 Modo de repetição alterado!`, flags: 64 });
             break;
+
           case 'btn_vol_down':
             const newVolDown = Math.max(0, queue.node.volume - 10);
             queue.node.setVolume(newVolDown);
             break;
+
           case 'btn_vol_up':
             const newVolUp = Math.min(100, queue.node.volume + 10);
             queue.node.setVolume(newVolUp);
             break;
+
           case 'btn_queue':
             const queueList = queue.tracks.toArray().slice(0, 10).map((t, i) => `**${i + 1}.** [${t.title}](${t.url}) - \`${t.duration}\``).join('\n') || 'Nenhuma outra música na fila.';
             interaction.followUp({
               embeds: [
                 new EmbedBuilder()
                   .setColor('#5865F2')
-                  .setTitle('📋 Fila de Músicas — LS Músicas')
+                  .setTitle('📋 Fila de Músicas — LS MÚSICAS')
                   .setDescription(queueList)
                   .setFooter({ text: `Total: ${queue.tracks.size} músicas na fila` })
               ],
               flags: 64
             });
             break;
+
           case 'btn_clear':
             queue.tracks.clear();
             interaction.followUp({ content: '🗑️ Fila limpa com sucesso!', flags: 64 });
             break;
         }
-        // Atualizar os botões/embed após a ação
+
         try {
           const updatedEmbed = createNowPlayingEmbed(queue.currentTrack || track, queue);
           const updatedButtons = createControlButtons(queue);
           await msg.edit({ embeds: [updatedEmbed], components: updatedButtons });
         } catch (e) {
-          // Ignorar se a mensagem tiver sido apagada
+          // Ignora caso mensagem apagada
         }
       });
     }).catch(console.error);
   }
 });
+
 player.events.on('emptyChannel', (queue) => {
   if (queue.metadata && queue.metadata.channel) {
     queue.metadata.channel.send('🚪 O canal de voz ficou vazio. Desconectando para economizar recursos...');
   }
 });
+
 player.events.on('emptyQueue', (queue) => {
   if (queue.metadata && queue.metadata.channel) {
     queue.metadata.channel.send('✅ Fila de músicas finalizada!');
   }
 });
+
+// Eventos de Tratamento de Erros no Player e Conexão de Voz
 player.events.on('error', (queue, error) => {
-  console.error('❌ Erro no Player:', error);
+  console.error('❌ [Player Queue Error]:', error);
 });
+
+player.events.on('playerError', (queue, error, track) => {
+  console.error(`❌ [Track Error em ${track?.title || 'Música'}]:`, error);
+});
+
+player.events.on('connectionError', (queue, error) => {
+  console.error('❌ [Voice Connection Error]:', error);
+});
+
+// Captura global de erros para evitar crash no Node.js/Railway
+client.on('error', (err) => console.error('❌ [Discord Client Error]:', err));
+process.on('unhandledRejection', (reason) => console.error('⚠️ [Unhandled Rejection]:', reason));
+process.on('uncaughtException', (err) => console.error('⚠️ [Uncaught Exception]:', err));
+
 // Evento quando o bot fica online
 client.once('ready', async () => {
   console.log(`🟢 LS MÚSICAS Online como ${client.user.tag}!`);
+
   await setupPlayer();
+
   // Registrar os Comandos Slash no Discord
   const rest = new REST({ version: '10' }).setToken(TOKEN);
+
   try {
     console.log('🔄 Registrando comandos Slash...');
     if (GUILD_ID) {
@@ -315,93 +374,131 @@ client.once('ready', async () => {
     console.error('❌ Erro ao registrar comandos Slash:', error);
   }
 });
+
 // Tratador de Interações e Comandos Slash
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+
   const { commandName, member, guild, channel } = interaction;
   const voiceChannel = member.voice.channel;
+
   if (!voiceChannel && ['play', 'pause', 'resume', 'skip', 'stop', 'volume', 'shuffle', 'clear', 'loop'].includes(commandName)) {
     return interaction.reply({ content: '❌ Você precisa estar conectado a um canal de voz para usar este comando!', flags: 64 });
   }
+
   try {
     if (commandName === 'play') {
       await interaction.deferReply();
       const query = interaction.options.getString('busca');
+
       const searchResult = await player.search(query, {
         requestedBy: interaction.user,
         searchEngine: QueryType.AUTO
       });
+
       if (!searchResult || !searchResult.tracks.length) {
         return interaction.editReply('❌ Nenhuma música foi encontrada para a sua busca.');
       }
-      const { queue } = await player.play(voiceChannel, searchResult, {
-        nodeOptions: {
-          metadata: { channel: channel },
-          volume: 80,
-          leaveOnEmpty: true,
-          leaveOnEmptyCooldown: 30000,
-          leaveOnEnd: false,
-          bufferingTimeout: 3000
+
+      try {
+        const { queue } = await player.nodes.play(voiceChannel, searchResult, {
+          nodeOptions: {
+            metadata: { channel: channel, voiceChannel: voiceChannel },
+            volume: 80,
+            selfDeaf: true,
+            leaveOnEmpty: true,
+            leaveOnEmptyCooldown: 30000,
+            leaveOnEnd: false,
+            bufferingTimeout: 10000,
+            connectionTimeout: 60000,
+            leaveOnStop: true
+          },
+          requestedBy: interaction.user,
+          connectionOptions: {
+            deaf: true
+          }
+        });
+
+        if (searchResult.playlist) {
+          return interaction.editReply(`✅ Playlist **${searchResult.playlist.title}** (${searchResult.tracks.length} músicas) adicionada à fila!`);
+        } else {
+          return interaction.editReply(`🎶 **${searchResult.tracks[0].title}** adicionada à fila!`);
         }
-      });
-      if (searchResult.playlist) {
-        return interaction.editReply(`✅ Playlist **${searchResult.playlist.title}** (${searchResult.tracks.length} músicas) adicionada à fila!`);
-      } else {
-        return interaction.editReply(`🎶 **${searchResult.tracks[0].title}** adicionada à fila!`);
+      } catch (playErr) {
+        console.error('❌ [Erro na conexão de voz]:', playErr);
+        if (playErr.name === 'AbortError' || playErr.message?.includes('aborted') || playErr.message?.includes('Timeout')) {
+          return interaction.editReply('⚠️ **Erro de Conexão na Voz:**\nO tempo limite do handshake de áudio do Discord expirou no Railway. Tente usar `/play` novamente ou garanta que o bot tem permissões de "Conectar" e "Falar".');
+        }
+        return interaction.editReply(`❌ Não foi possível tocar a música: ${playErr.message || playErr}`);
       }
     }
+
     const queue = player.nodes.get(guild.id);
+
     if (!queue || !queue.isPlaying()) {
       if (['pause', 'resume', 'skip', 'stop', 'volume', 'nowplaying', 'shuffle', 'clear', 'loop', 'remove'].includes(commandName)) {
         return interaction.reply({ content: '❌ Não há nenhuma música tocando no momento neste servidor!', flags: 64 });
       }
     }
+
     if (commandName === 'pause') {
       queue.node.pause();
       return interaction.reply('⏸️ Reprodução pausada!');
     }
+
     if (commandName === 'resume') {
       queue.node.resume();
       return interaction.reply('▶️ Reprodução retomada!');
     }
+
     if (commandName === 'skip') {
       queue.node.skip();
       return interaction.reply('⏭️ Música pulada!');
     }
+
     if (commandName === 'stop') {
       queue.delete();
       return interaction.reply('⏹️ Reprodução interrompida e canal desconectado.');
     }
+
     if (commandName === 'queue') {
       const currentTrack = queue.currentTrack;
       const tracks = queue.tracks.toArray().slice(0, 10);
+
       const queueString = tracks.map((t, idx) => `**${idx + 1}.** [${t.title}](${t.url}) - \`${t.duration}\` | por ${t.requestedBy}`).join('\n') || 'Nenhuma outra música na fila.';
+
       const embed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle('📋 Fila do LS MÚSICAS')
         .setDescription(`**Tocando Agora:**\n[${currentTrack.title}](${currentTrack.url}) - \`${currentTrack.duration}\`\n\n**Próximas Músicas:**\n${queueString}`)
         .setFooter({ text: `Total de ${queue.tracks.size} música(s) na fila` });
+
       return interaction.reply({ embeds: [embed] });
     }
+
     if (commandName === 'nowplaying') {
       const currentTrack = queue.currentTrack;
       const embed = createNowPlayingEmbed(currentTrack, queue);
       const components = createControlButtons(queue);
       return interaction.reply({ embeds: [embed], components: components });
     }
+
     if (commandName === 'volume') {
       const level = interaction.options.getInteger('nivel');
       queue.node.setVolume(level);
       return interaction.reply(`🔊 Volume ajustado para **${level}%**!`);
     }
+
     if (commandName === 'shuffle') {
       queue.tracks.shuffle();
       return interaction.reply('🔀 Fila embaralhada com sucesso!');
     }
+
     if (commandName === 'clear') {
       queue.tracks.clear();
       return interaction.reply('🗑️ Fila esvaziada com sucesso!');
     }
+
     if (commandName === 'loop') {
       const modo = interaction.options.getString('modo');
       if (modo === 'off') {
@@ -415,6 +512,7 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply('🔁 Repetição da FILA INTEIRA ativada!');
       }
     }
+
     if (commandName === 'remove') {
       const num = interaction.options.getInteger('numero') - 1;
       const trackToRemove = queue.tracks.toArray()[num];
@@ -424,6 +522,7 @@ client.on('interactionCreate', async (interaction) => {
       queue.node.remove(trackToRemove);
       return interaction.reply(`🗑️ Removida: **${trackToRemove.title}** da fila.`);
     }
+
   } catch (error) {
     console.error(`❌ Erro ao executar o comando ${commandName}:`, error);
     if (interaction.deferred || interaction.replied) {
@@ -433,5 +532,6 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 });
+
 // Login do Bot no Discord
 client.login(TOKEN);
