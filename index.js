@@ -219,9 +219,9 @@ function createNowPlayingEmbed(track, queue) {
     .setURL(track.url)
     .setDescription(`**Artista/Canal:** ${track.author}\n**Duração:** \`${track.duration}\` | **Adicionado por:** ${track.requestedBy}`)
     .addFields(
-      { name: '🔊 Volume', value: \`${currentVolume}%`\, inline: true },
-      { name: '🔁 Loop', value: \`${loopStatus}\`, inline: true },
-      { name: '📋 Fila', value: \`${queue.tracks.size} músicas pendentes\`, inline: true }
+      { name: '🔊 Volume', value: `${currentVolume}%`, inline: true },
+      { name: '🔁 Loop', value: `${loopStatus}`, inline: true },
+      { name: '📋 Fila', value: `${queue.tracks.size} músicas pendentes`, inline: true }
     )
     .setThumbnail(track.thumbnail || client.user.displayAvatarURL())
     .setFooter({ text: 'LS Músicas • Estilo Jockie Music • Sistema de Alta Qualidade', iconURL: client.user.displayAvatarURL() })
