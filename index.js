@@ -7,6 +7,7 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, getVoiceConnection, NoSubscriberBehavior } = require('@discordjs/voice');
 const play = require('play-dl');
+const yts = require('yt-search');
 
 // Token & Client Configuration
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -165,7 +166,7 @@ async function playNext(guildId) {
     }
   } catch (error) {
     console.error('Erro ao tocar música:', error);
-    serverQueue.textChannel.send('⚠️ Erro ao tocar **' + song.title + '**. Pulando para a próxima...');
+    serverQueue.textChannel.send('⚠️ Erro ao carregar stream de **' + song.title + '**. Pulando para a próxima...');
     serverQueue.songs.shift();
     playNext(guildId);
   }
@@ -188,18 +189,44 @@ client.on('interactionCreate', async interaction => {
       await interaction.deferReply();
       const query = options.getString('musica');
 
+      if (!query || !query.trim()) {
+        return interaction.editReply('❌ Por favor informe o nome ou link da música!');
+      }
+
       try {
-        const searchResults = await play.search(query, { limit: 1 });
-        if (!searchResults || searchResults.length === 0) {
-          return interaction.editReply('❌ Nenhuma música encontrada com esse termo!');
+        let videoUrl = query.trim();
+        let videoTitle = query.trim();
+        let videoDuration = '3:30';
+        let videoThumb = 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=400&q=80';
+
+        // Usar yt-search seguro para encontrar resultados no YouTube
+        if (!videoUrl.startsWith('http://') && !videoUrl.startsWith('https://')) {
+          const searchResult = await yts(videoUrl);
+          if (searchResult && searchResult.videos && searchResult.videos.length > 0) {
+            const topVideo = searchResult.videos[0];
+            videoTitle = topVideo.title;
+            videoUrl = topVideo.url;
+            videoDuration = topVideo.timestamp || '3:30';
+            videoThumb = topVideo.thumbnail || videoThumb;
+          } else {
+            return interaction.editReply('❌ Nenhuma música encontrada no YouTube para: **' + query + '**');
+          }
+        } else {
+          // Se for URL direta, buscar dados pelo yts
+          const searchResult = await yts(videoUrl);
+          if (searchResult && searchResult.videos && searchResult.videos.length > 0) {
+            const topVideo = searchResult.videos[0];
+            videoTitle = topVideo.title;
+            videoDuration = topVideo.timestamp || videoDuration;
+            videoThumb = topVideo.thumbnail || videoThumb;
+          }
         }
 
-        const video = searchResults[0];
         const song = {
-          title: video.title,
-          url: video.url,
-          duration: video.durationRaw || '3:30',
-          thumbnail: video.thumbnails[0]?.url,
+          title: videoTitle,
+          url: videoUrl,
+          duration: videoDuration,
+          thumbnail: videoThumb,
           requestedBy: member.user.username
         };
 
@@ -234,14 +261,14 @@ client.on('interactionCreate', async interaction => {
           });
 
           playNext(guild.id);
-          await interaction.editReply('🔧 **Adicionado à rádio:** **' + song.title + '**!');
+          await interaction.editReply('🔧 **Tocando na rádio:** **' + song.title + '**!');
         } else {
           serverQueue.songs.push(song);
           await interaction.editReply('📋 **Adicionado à fila da LS Customs:** **' + song.title + '** (Posição #' + serverQueue.songs.length + ')');
         }
       } catch (err) {
-        console.error(err);
-        return interaction.editReply('⚠️ Ocorreu um erro ao buscar a música!');
+        console.error("Erro na busca do YouTube:", err);
+        return interaction.editReply('⚠️ Ocorreu um erro ao buscar a música no YouTube. Verifique o nome/link e tente novamente!');
       }
     }
 
@@ -282,7 +309,7 @@ client.on('interactionCreate', async interaction => {
     else if (commandName === 'queue') {
       if (!serverQueue || serverQueue.songs.length === 0) return interaction.reply('📋 A fila da oficina está vazia no momento.');
 
-      const list = serverQueue.songs.slice(0, 10).map((s, i) => (i === 0 ? '▶️ **Tocando Now:** ' : '#' + i + ' ') + s.title + ' (pedida por ' + s.requestedBy + ')').join('\n');
+      const list = serverQueue.songs.slice(0, 10).map((s, i) => (i === 0 ? '▶️ **Tocando Agora:** ' : '#' + i + ' ') + s.title + ' (pedida por ' + s.requestedBy + ')').join('\n');
       interaction.reply('📋 **FILA DA GARAGEM LS CUSTOMS:**\n\n' + list);
     }
 
