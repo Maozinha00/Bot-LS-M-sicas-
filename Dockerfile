@@ -15,7 +15,8 @@ WORKDIR /app
 # Copia os arquivos de manifesto do pacote
 COPY package*.json ./
 
-# Usa 'npm install --omit=dev' em vez de 'npm ci' para garantir build sem erros
+# CORREÇÃO CRÍTICA RAILWAY: Usa 'npm install --omit=dev' em vez de 'npm ci --only=production'
+# Isso evita o erro 'EUSAGE: npm ci requires an existing package-lock.json'
 RUN npm install --omit=dev
 
 # Copia o código-fonte
