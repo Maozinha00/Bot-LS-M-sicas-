@@ -1,49 +1,17 @@
 /**
- * LS MÚSICAS - Bot Discord estilo Jockie Music
- * Desenvolvido para hospedagem no Railway com Node.js 20.x
- *
- * Funcionalidades:
- * - Comandos Slash (/play, /pause, /resume, /skip, /stop, /queue, /nowplaying, /volume, /shuffle, /clear, /remove, /loop)
- * - Painel de Botões Interativo no embed Now Playing estilo Jockie Music
- * - Auto-desconexão quando o canal de voz estiver vazio
- * - Suporte a pesquisa por nome e links (YouTube / Spotify / SoundCloud)
- * - Registro automático de Slash Commands na guild configurada
+ * LS CUSTOMS MUSIC BOT v2.5
+ * Bot de Música Simples para Discord - Servidor LS CUSTOMS (GTA RP)
+ * Compatível com Node.js 20+ e Hospedagem no Railway / Render / VPS
  */
 
-// Pre-carrega dependências de áudio nativas para evitar fallback legado
-try {
-  require('@discordjs/voice');
-  require('libsodium-wrappers');
-} catch (e) {}
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, getVoiceConnection, NoSubscriberBehavior } = require('@discordjs/voice');
+const play = require('play-dl');
 
-const { 
-  Client, 
-  GatewayIntentBits, 
-  EmbedBuilder, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
-  ButtonStyle, 
-  REST, 
-  Routes, 
-  SlashCommandBuilder, 
-  ComponentType 
-} = require('discord.js');
-const { Player, QueryType, QueueRepeatMode } = require('discord-player');
-const { DefaultExtractors } = require('@discord-player/extractor');
-
-// Carrega variáveis de ambiente
-require('dotenv').config();
-
+// Token & Client Configuration
 const TOKEN = process.env.DISCORD_TOKEN;
-const GUILD_ID = process.env.GUILD_ID;
-const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
+const CLIENT_ID = process.env.CLIENT_ID;
 
-if (!TOKEN) {
-  console.error('❌ ERRO CRÍTICO: DISCORD_TOKEN não foi configurado nas variáveis de ambiente!');
-  process.exit(1);
-}
-
-// Inicializa o Client do Discord com as intenções necessárias
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -53,53 +21,34 @@ const client = new Client({
   ]
 });
 
-// Inicializa o Discord Player para gerenciamento de áudio
-const player = new Player(client, {
-  ytdlOptions: {
-    quality: 'highestaudio',
-    highWaterMark: 1 << 25,
-    filter: 'audioonly',
-    liveBuffer: 60000,
-    dlChunkSize: 0
-  }
-});
+// Cache da Fila por Servidor (Guild ID -> Data)
+const queues = new Map();
 
-// Registra os extratores padrão (YouTube, Spotify, SoundCloud, Apple Music)
-async function setupPlayer() {
-  try {
-    await player.extractors.loadMulti(DefaultExtractors);
-    console.log('✅ Extratores de música carregados com sucesso.');
-  } catch (err) {
-    console.warn('⚠️ Aviso no carregamento dos extratores:', err.message);
-  }
-}
-
-// Definição dos Comandos Slash no Estilo Jockie Music
+// REGISTRO DOS COMANDOS SLASH
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Toca uma música ou playlist do YouTube/Spotify')
-    .addStringOption(option => 
-      option.setName('busca')
-        .setDescription('Nome da música, artista ou link da playlist')
-        .setRequired(true)
-    ),
+    .setDescription('Toca uma música no canal de voz da LS Customs')
+    .addStringOption(option =>
+      option.setName('musica')
+        .setDescription('Nome da música, artista ou link do YouTube/Spotify')
+        .setRequired(true)),
 
   new SlashCommandBuilder()
     .setName('pause')
-    .setDescription('Pausa a reprodução da música atual'),
+    .setDescription('Pausa a reprodução da rádio da oficina'),
 
   new SlashCommandBuilder()
     .setName('resume')
-    .setDescription('Retoma a reprodução da música pausada'),
+    .setDescription('Retoma a música pausada'),
 
   new SlashCommandBuilder()
     .setName('skip')
-    .setDescription('Pula a música atual'),
+    .setDescription('Pula para a próxima música da fila'),
 
   new SlashCommandBuilder()
     .setName('stop')
-    .setDescription('Para a música, limpa a fila e sai do canal de voz'),
+    .setDescription('Para a rádio e limpa toda a fila da oficina'),
 
   new SlashCommandBuilder()
     .setName('queue')
@@ -107,437 +56,324 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('nowplaying')
-    .setDescription('Exibe detalhes e o painel de controles da música atual'),
+    .setDescription('Mostra detalhes da música que está tocando agora'),
 
   new SlashCommandBuilder()
     .setName('volume')
-    .setDescription('Ajusta o volume do bot (0 a 100)')
+    .setDescription('Ajusta o volume do alto-falante (1 - 100)')
     .addIntegerOption(option =>
       option.setName('nivel')
-        .setDescription('Volume de 0 a 100')
+        .setDescription('Volume de 1 a 100')
         .setRequired(true)
-        .setMinValue(0)
-        .setMaxValue(100)
-    ),
-
-  new SlashCommandBuilder()
-    .setName('shuffle')
-    .setDescription('Embaralha a ordem das músicas na fila'),
-
-  new SlashCommandBuilder()
-    .setName('clear')
-    .setDescription('Esvazia todas as músicas da fila (exceto a atual)'),
+        .setMinValue(1)
+        .setMaxValue(100)),
 
   new SlashCommandBuilder()
     .setName('loop')
-    .setDescription('Alterna o modo de repetição (Desativado / Música / Fila)')
-    .addStringOption(option =>
-      option.setName('modo')
-        .setDescription('Modo de repetição')
-        .setRequired(true)
-        .addChoices(
-          { name: 'Desativado', value: 'off' },
-          { name: 'Repetir Música Atual', value: 'track' },
-          { name: 'Repetir Fila Inteira', value: 'queue' }
-        )
-    ),
+    .setDescription('Ativa/Desativa repetição da música atual'),
 
   new SlashCommandBuilder()
-    .setName('remove')
-    .setDescription('Remove uma música específica da fila pelo número')
-    .addIntegerOption(option =>
-      option.setName('numero')
-        .setDescription('Posição da música na fila')
-        .setRequired(true)
-        .setMinValue(1)
-    )
-].map(command => command.toJSON());
+    .setName('shuffle')
+    .setDescription('Embaralha a fila de músicas da garagem')
+].map(cmd => cmd.toJSON());
 
-// Criação do Painel Interativo de Botões do Jockie Music
-function createControlButtons(queue) {
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('btn_pause_resume')
-      .setEmoji(queue.node.isPaused() ? '▶️' : '⏸️')
-      .setStyle(queue.node.isPaused() ? ButtonStyle.Success : ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('btn_skip')
-      .setEmoji('⏭️')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('btn_stop')
-      .setEmoji('⏹️')
-      .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId('btn_shuffle')
-      .setEmoji('🔀')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('btn_loop')
-      .setEmoji(queue.repeatMode === QueueRepeatMode.TRACK ? '🔂' : queue.repeatMode === QueueRepeatMode.QUEUE ? '🔁' : '➡️')
-      .setStyle(queue.repeatMode !== QueueRepeatMode.OFF ? ButtonStyle.Success : ButtonStyle.Secondary)
-  );
-
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('btn_vol_down')
-      .setEmoji('🔉')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('btn_vol_up')
-      .setEmoji('🔊')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('btn_queue')
-      .setEmoji('📋')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('btn_clear')
-      .setEmoji('🗑️')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  return [row1, row2];
-}
-
-// Constrói o Embed Estilo Jockie Music para Now Playing
-function createNowPlayingEmbed(track, queue) {
-  const currentVolume = queue.node.volume;
-  const loopStatus = queue.repeatMode === QueueRepeatMode.TRACK 
-    ? '🔂 Música' 
-    : queue.repeatMode === QueueRepeatMode.QUEUE 
-    ? '🔁 Fila' 
-    : '❌ Desativado';
-
-  return new EmbedBuilder()
-    .setColor('#5865F2')
-    .setAuthor({ 
-      name: '🎵 LS MÚSICAS — Tocando Agora', 
-      iconURL: client.user.displayAvatarURL() 
-    })
-    .setTitle(track.title)
-    .setURL(track.url)
-    .setDescription(`**Artista/Canal:** ${track.author}\n**Duração:** \`${track.duration}\` | **Adicionado por:** ${track.requestedBy}`)
-    .addFields(
-      { name: '🔊 Volume', value: `${currentVolume}%`, inline: true },
-      { name: '🔁 Loop', value: `${loopStatus}`, inline: true },
-      { name: '📋 Fila', value: `${queue.tracks.size} músicas pendentes`, inline: true }
-    )
-    .setThumbnail(track.thumbnail || client.user.displayAvatarURL())
-    .setFooter({ text: 'LS Músicas • Estilo Jockie Music • Sistema de Alta Qualidade', iconURL: client.user.displayAvatarURL() })
-    .setTimestamp();
-}
-
-// Eventos do Player do Discord
-player.events.on('playerStart', (queue, track) => {
-  const embed = createNowPlayingEmbed(track, queue);
-  const components = createControlButtons(queue);
-
-  if (queue.metadata && queue.metadata.channel) {
-    queue.metadata.channel.send({
-      embeds: [embed],
-      components: components
-    }).then(msg => {
-      const collector = msg.createMessageComponentCollector({
-        componentType: ComponentType.Button,
-        time: track.durationMS > 0 ? track.durationMS : 300000
-      });
-
-      collector.on('collect', async (interaction) => {
-        if (!interaction.member.voice.channel || interaction.member.voice.channel.id !== queue.channel.id) {
-          return interaction.reply({ content: '❌ Você precisa estar no mesmo canal de voz que o bot para usar os controles!', ephemeral: true });
-        }
-
-        await interaction.deferUpdate();
-
-        switch (interaction.customId) {
-          case 'btn_pause_resume':
-            queue.node.togglePause();
-            break;
-
-          case 'btn_skip':
-            queue.node.skip();
-            interaction.followUp({ content: '⏭️ Música pulada com sucesso!', ephemeral: true });
-            break;
-
-          case 'btn_stop':
-            queue.delete();
-            interaction.followUp({ content: '⏹️ Reprodução parada e fila limpa!', ephemeral: true });
-            break;
-
-          case 'btn_shuffle':
-            queue.tracks.shuffle();
-            interaction.followUp({ content: '🔀 Fila embaralhada!', ephemeral: true });
-            break;
-
-          case 'btn_loop':
-            const nextMode = queue.repeatMode === QueueRepeatMode.OFF 
-              ? QueueRepeatMode.TRACK 
-              : queue.repeatMode === QueueRepeatMode.TRACK 
-              ? QueueRepeatMode.QUEUE 
-              : QueueRepeatMode.OFF;
-            queue.setRepeatMode(nextMode);
-            interaction.followUp({ content: `🔁 Modo de repetição alterado!`, ephemeral: true });
-            break;
-
-          case 'btn_vol_down':
-            const newVolDown = Math.max(0, queue.node.volume - 10);
-            queue.node.setVolume(newVolDown);
-            break;
-
-          case 'btn_vol_up':
-            const newVolUp = Math.min(100, queue.node.volume + 10);
-            queue.node.setVolume(newVolUp);
-            break;
-
-          case 'btn_queue':
-            const queueList = queue.tracks.toArray().slice(0, 10).map((t, i) => `**${i + 1}.** [${t.title}](${t.url}) - \`${t.duration}\``).join('\n') || 'Nenhuma outra música na fila.';
-            interaction.followUp({
-              embeds: [
-                new EmbedBuilder()
-                  .setColor('#5865F2')
-                  .setTitle('📋 Fila de Músicas — LS MÚSICAS')
-                  .setDescription(queueList)
-                  .setFooter({ text: `Total: ${queue.tracks.size} músicas na fila` })
-              ],
-              ephemeral: true
-            });
-            break;
-
-          case 'btn_clear':
-            queue.tracks.clear();
-            interaction.followUp({ content: '🗑️ Fila limpa com sucesso!', ephemeral: true });
-            break;
-        }
-
-        try {
-          const updatedEmbed = createNowPlayingEmbed(queue.currentTrack || track, queue);
-          const updatedButtons = createControlButtons(queue);
-          await msg.edit({ embeds: [updatedEmbed], components: updatedButtons });
-        } catch (e) {
-          // Ignora caso mensagem seja apagada
-        }
-      });
-    }).catch(console.error);
-  }
-});
-
-player.events.on('emptyChannel', (queue) => {
-  if (queue.metadata && queue.metadata.channel) {
-    queue.metadata.channel.send('🚪 O canal de voz ficou vazio. Desconectando para economizar recursos...');
-  }
-});
-
-player.events.on('emptyQueue', (queue) => {
-  if (queue.metadata && queue.metadata.channel) {
-    queue.metadata.channel.send('✅ Fila de músicas finalizada!');
-  }
-});
-
-// Eventos de Tratamento de Erros no Player e Conexão de Voz
-player.events.on('error', (queue, error) => {
-  console.error('❌ [Player Queue Error]:', error);
-});
-
-player.events.on('playerError', (queue, error, track) => {
-  console.error(`❌ [Track Error em ${track?.title || 'Música'}]:`, error);
-});
-
-player.events.on('connectionError', (queue, error) => {
-  console.error('❌ [Voice Connection Error]:', error);
-});
-
-// Captura global de erros para evitar crash no Node.js/Railway
-client.on('error', (err) => console.error('❌ [Discord Client Error]:', err));
-process.on('unhandledRejection', (reason) => console.error('⚠️ [Unhandled Rejection]:', reason));
-process.on('uncaughtException', (err) => console.error('⚠️ [Uncaught Exception]:', err));
-
-// Evento quando o bot fica online
+// REGISTRAR COMANDOS AO INICIAR
 client.once('ready', async () => {
-  console.log(`🟢 LS MÚSICAS Online como ${client.user.tag}!`);
+  console.log("🔧 LS CUSTOMS MUSIC BOT ON! Logado como " + client.user.tag);
+  client.user.setActivity('🔧 Som na Garagem | /play', { type: 2 });
 
-  await setupPlayer();
+  if (CLIENT_ID && TOKEN) {
+    const rest = new REST({ version: '10' }).setToken(TOKEN);
+    try {
+      console.log('🔄 Registrando comandos Slash (/)...');
+      await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+      console.log('✅ Comandos Slash registrados com sucesso!');
+    } catch (err) {
+      console.error('❌ Erro ao registrar comandos:', err);
+    }
+  }
+});
 
-  // Registrar os Comandos Slash no Discord
-  const rest = new REST({ version: '10' }).setToken(TOKEN);
+// CRIAR EMBED COM PAINEL DE BOTÕES TEMÁTICO LS CUSTOMS
+function createLSMessageEmbed(guildQueue) {
+  const current = guildQueue.songs[0];
+  if (!current) return null;
+
+  const statusEmoji = guildQueue.playing ? '▶️ Tocando' : '⏸️ Pausado';
+  const loopEmoji = guildQueue.looping ? '🔁 Ligado' : '➡️ Desligado';
+  const pendingSongs = guildQueue.songs.length > 1 ? (guildQueue.songs.length - 1) : 0;
+
+  const embed = new EmbedBuilder()
+    .setColor('#FFB800')
+    .setTitle('🔧 LS CUSTOMS | RÁDIO DA OFICINA')
+    .setDescription("[ " + current.title + " ](" + current.url + ")")
+    .setThumbnail(current.thumbnail || 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=400&q=80')
+    .addFields(
+      { name: '👤 Solicitado por', value: String(current.requestedBy), inline: true },
+      { name: '⏱️ Duração', value: String(current.duration), inline: true },
+      { name: '🔊 Volume', value: guildQueue.volume + '%', inline: true },
+      { name: '⚙️ Status', value: statusEmoji, inline: true },
+      { name: '🔁 Loop', value: loopEmoji, inline: true },
+      { name: '📋 Na Fila', value: pendingSongs + ' música(s)', inline: true }
+    )
+    .setFooter({ text: 'LS Customs - O melhor tuning e som de Los Santos! 🛠️' })
+    .setTimestamp();
+
+  // Linha de Botões de Controle (⏮️ ⏸️ ▶️ ⏭️ 🔁 ⏹️)
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('btn_pause_resume').setEmoji(guildQueue.playing ? '⏸️' : '▶️').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('btn_skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('btn_loop').setEmoji('🔁').setStyle(guildQueue.looping ? ButtonStyle.Success : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('btn_queue').setEmoji('📋').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('btn_stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger)
+  );
+
+  return { embeds: [embed], components: [row] };
+}
+
+// TOCAR MÚSICA DA FILA
+async function playNext(guildId) {
+  const serverQueue = queues.get(guildId);
+
+  if (!serverQueue || serverQueue.songs.length === 0) {
+    if (serverQueue && serverQueue.connection) {
+      setTimeout(() => {
+        const checkQueue = queues.get(guildId);
+        if (!checkQueue || checkQueue.songs.length === 0) {
+          serverQueue.connection.destroy();
+          queues.delete(guildId);
+          serverQueue.textChannel.send('🚗 **[LS CUSTOMS]**: Fila vazia! Rádio desligada para economizar bateria da garagem.');
+        }
+      }, 60000);
+    }
+    return;
+  }
+
+  const song = serverQueue.songs[0];
 
   try {
-    console.log('🔄 Registrando comandos Slash...');
-    if (GUILD_ID) {
-      await rest.put(
-        Routes.applicationGuildCommands(client.user.id, GUILD_ID),
-        { body: commands }
-      );
-      console.log(`✅ Comandos Slash registrados com sucesso no Servidor ID: ${GUILD_ID}`);
-    } else {
-      await rest.put(
-        Routes.applicationCommands(client.user.id),
-        { body: commands }
-      );
-      console.log('✅ Comandos Slash registrados globalmente.');
+    const stream = await play.stream(song.url);
+    const resource = createAudioResource(stream.stream, { inputType: stream.type, inlineVolume: true });
+    resource.volume.setVolume(serverQueue.volume / 100);
+
+    serverQueue.player.play(resource);
+    serverQueue.connection.subscribe(serverQueue.player);
+
+    const panel = createLSMessageEmbed(serverQueue);
+    if (panel) {
+      serverQueue.controlMessage = await serverQueue.textChannel.send(panel);
     }
   } catch (error) {
-    console.error('❌ Erro ao registrar comandos Slash:', error);
+    console.error('Erro ao tocar música:', error);
+    serverQueue.textChannel.send('⚠️ Erro ao tocar **' + song.title + '**. Pulando para a próxima...');
+    serverQueue.songs.shift();
+    playNext(guildId);
   }
-});
+}
 
-// Tratador de Interações e Comandos Slash
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+// PROCESSAR COMANDOS SLASH
+client.on('interactionCreate', async interaction => {
+  if (interaction.isChatInputCommand()) {
+    const { commandName, options, guild, member } = interaction;
+    const voiceChannel = member.voice.channel;
 
-  const { commandName, member, guild, channel } = interaction;
-  const voiceChannel = member.voice.channel;
+    if (!voiceChannel && ['play', 'pause', 'resume', 'skip', 'stop', 'volume', 'loop', 'shuffle'].includes(commandName)) {
+      return interaction.reply({ content: '❌ **Você precisa estar em um canal de voz** da LS Customs para controlar a rádio!', ephemeral: true });
+    }
 
-  if (!voiceChannel && ['play', 'pause', 'resume', 'skip', 'stop', 'volume', 'shuffle', 'clear', 'loop'].includes(commandName)) {
-    return interaction.reply({ content: '❌ Você precisa estar conectado a um canal de voz para usar este comando!', ephemeral: true });
-  }
+    let serverQueue = queues.get(guild.id);
 
-  try {
+    // /PLAY
     if (commandName === 'play') {
       await interaction.deferReply();
-      const query = interaction.options.getString('busca');
-
-      const searchResult = await player.search(query, {
-        requestedBy: interaction.user,
-        searchEngine: QueryType.AUTO
-      });
-
-      if (!searchResult || !searchResult.tracks.length) {
-        return interaction.editReply('❌ Nenhuma música foi encontrada para a sua busca.');
-      }
+      const query = options.getString('musica');
 
       try {
-        const { queue } = await player.nodes.play(voiceChannel, searchResult, {
-          nodeOptions: {
-            metadata: { channel: channel, voiceChannel: voiceChannel },
-            volume: 80,
-            selfDeaf: true,
-            leaveOnEmpty: true,
-            leaveOnEmptyCooldown: 30000,
-            leaveOnEnd: false,
-            bufferingTimeout: 10000,
-            connectionTimeout: 60000,
-            leaveOnStop: true
-          },
-          requestedBy: interaction.user,
-          connectionOptions: {
-            deaf: true
-          }
-        });
+        const searchResults = await play.search(query, { limit: 1 });
+        if (!searchResults || searchResults.length === 0) {
+          return interaction.editReply('❌ Nenhuma música encontrada com esse termo!');
+        }
 
-        if (searchResult.playlist) {
-          return interaction.editReply(`✅ Playlist **${searchResult.playlist.title}** (${searchResult.tracks.length} músicas) adicionada à fila!`);
+        const video = searchResults[0];
+        const song = {
+          title: video.title,
+          url: video.url,
+          duration: video.durationRaw || '3:30',
+          thumbnail: video.thumbnails[0]?.url,
+          requestedBy: member.user.username
+        };
+
+        if (!serverQueue) {
+          const queueConstruct = {
+            textChannel: interaction.channel,
+            voiceChannel: voiceChannel,
+            connection: null,
+            player: createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } }),
+            songs: [song],
+            volume: 50,
+            playing: true,
+            looping: false,
+            controlMessage: null
+          };
+
+          queues.set(guild.id, queueConstruct);
+
+          const connection = joinVoiceChannel({
+            channelId: voiceChannel.id,
+            guildId: guild.id,
+            adapterCreator: guild.voiceAdapterCreator,
+          });
+
+          queueConstruct.connection = connection;
+
+          queueConstruct.player.on(AudioPlayerStatus.Idle, () => {
+            if (!queueConstruct.looping) {
+              queueConstruct.songs.shift();
+            }
+            playNext(guild.id);
+          });
+
+          playNext(guild.id);
+          await interaction.editReply('🔧 **Adicionado à rádio:** **' + song.title + '**!');
         } else {
-          return interaction.editReply(`🎶 **${searchResult.tracks[0].title}** adicionada à fila!`);
+          serverQueue.songs.push(song);
+          await interaction.editReply('📋 **Adicionado à fila da LS Customs:** **' + song.title + '** (Posição #' + serverQueue.songs.length + ')');
         }
-      } catch (playErr) {
-        console.error('❌ [Erro na conexão de voz]:', playErr);
-        if (playErr.name === 'AbortError' || playErr.message?.includes('aborted') || playErr.message?.includes('Timeout')) {
-          return interaction.editReply('⚠️ **Erro de Conexão na Voz:**\nO tempo limite do handshake de áudio do Discord expirou no Railway. Tente usar `/play` novamente ou garanta que o bot tem permissões de "Conectar" e "Falar".');
-        }
-        return interaction.editReply(`❌ Não foi possível tocar a música: ${playErr.message || playErr}`);
+      } catch (err) {
+        console.error(err);
+        return interaction.editReply('⚠️ Ocorreu um erro ao buscar a música!');
       }
     }
 
-    const queue = player.nodes.get(guild.id);
+    // /PAUSE
+    else if (commandName === 'pause') {
+      if (!serverQueue || !serverQueue.playing) return interaction.reply({ content: '⚠️ A rádio já está pausada!', ephemeral: true });
+      serverQueue.player.pause();
+      serverQueue.playing = false;
+      interaction.reply('⏸️ **Rádio da LS Customs Pausada!**');
+    }
 
-    if (!queue || !queue.isPlaying()) {
-      if (['pause', 'resume', 'skip', 'stop', 'volume', 'nowplaying', 'shuffle', 'clear', 'loop', 'remove'].includes(commandName)) {
-        return interaction.reply({ content: '❌ Não há nenhuma música tocando no momento neste servidor!', ephemeral: true });
+    // /RESUME
+    else if (commandName === 'resume') {
+      if (!serverQueue || serverQueue.playing) return interaction.reply({ content: '⚠️ A rádio já está tocando!', ephemeral: true });
+      serverQueue.player.unpause();
+      serverQueue.playing = true;
+      interaction.reply('▶️ **Rádio Retomada! Solta o ronco do V8!**');
+    }
+
+    // /SKIP
+    else if (commandName === 'skip') {
+      if (!serverQueue || serverQueue.songs.length === 0) return interaction.reply({ content: '⚠️ Não há músicas na fila para pular!', ephemeral: true });
+      serverQueue.player.stop();
+      interaction.reply('⏭️ **Música pulada com sucesso!**');
+    }
+
+    // /STOP
+    else if (commandName === 'stop') {
+      if (!serverQueue) return interaction.reply({ content: '⚠️ Nenhuma música está tocando!', ephemeral: true });
+      serverQueue.songs = [];
+      serverQueue.player.stop();
+      if (serverQueue.connection) serverQueue.connection.destroy();
+      queues.delete(guild.id);
+      interaction.reply('⏹️ **Rádio desligada e fila limpa por completo!**');
+    }
+
+    // /QUEUE
+    else if (commandName === 'queue') {
+      if (!serverQueue || serverQueue.songs.length === 0) return interaction.reply('📋 A fila da oficina está vazia no momento.');
+
+      const list = serverQueue.songs.slice(0, 10).map((s, i) => (i === 0 ? '▶️ **Tocando Now:** ' : '#' + i + ' ') + s.title + ' (pedida por ' + s.requestedBy + ')').join('\n');
+      interaction.reply('📋 **FILA DA GARAGEM LS CUSTOMS:**\n\n' + list);
+    }
+
+    // /VOLUME
+    else if (commandName === 'volume') {
+      const vol = options.getInteger('nivel');
+      if (!serverQueue) return interaction.reply({ content: '⚠️ Nenhuma música tocando para alterar o volume!', ephemeral: true });
+      serverQueue.volume = vol;
+      interaction.reply('🔊 **Volume da rádio ajustado para ' + vol + '%**');
+    }
+
+    // /LOOP
+    else if (commandName === 'loop') {
+      if (!serverQueue) return interaction.reply({ content: '⚠️ Nenhuma música tocando!', ephemeral: true });
+      serverQueue.looping = !serverQueue.looping;
+      interaction.reply('🔁 **Repetição da música ' + (serverQueue.looping ? 'ATIVADA' : 'DESATIVADA') + '!**');
+    }
+
+    // /SHUFFLE
+    else if (commandName === 'shuffle') {
+      if (!serverQueue || serverQueue.songs.length <= 1) return interaction.reply('⚠️ Poucas músicas na fila para embaralhar!');
+      const current = serverQueue.songs.shift();
+      serverQueue.songs.sort(() => Math.random() - 0.5);
+      serverQueue.songs.unshift(current);
+      interaction.reply('🔀 **Fila da oficina embaralhada com sucesso!**');
+    }
+  }
+
+  // EVENTOS DE BOTÕES DO PAINEL DISCORD
+  if (interaction.isButton()) {
+    const { customId, guild } = interaction;
+    const serverQueue = queues.get(guild.id);
+
+    if (!serverQueue) {
+      return interaction.reply({ content: '⚠️ Fila inativa. Digite `/play` para iniciar!', ephemeral: true });
+    }
+
+    if (customId === 'btn_pause_resume') {
+      if (serverQueue.playing) {
+        serverQueue.player.pause();
+        serverQueue.playing = false;
+      } else {
+        serverQueue.player.unpause();
+        serverQueue.playing = true;
       }
-    }
-
-    if (commandName === 'pause') {
-      queue.node.pause();
-      return interaction.reply('⏸️ Reprodução pausada!');
-    }
-
-    if (commandName === 'resume') {
-      queue.node.resume();
-      return interaction.reply('▶️ Reprodução retomada!');
-    }
-
-    if (commandName === 'skip') {
-      queue.node.skip();
-      return interaction.reply('⏭️ Música pulada!');
-    }
-
-    if (commandName === 'stop') {
-      queue.delete();
-      return interaction.reply('⏹️ Reprodução interrompida e canal desconectado.');
-    }
-
-    if (commandName === 'queue') {
-      const currentTrack = queue.currentTrack;
-      const tracks = queue.tracks.toArray().slice(0, 10);
-
-      const queueString = tracks.map((t, idx) => `**${idx + 1}.** [${t.title}](${t.url}) - \`${t.duration}\` | por ${t.requestedBy}`).join('\n') || 'Nenhuma outra música na fila.';
-
-      const embed = new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('📋 Fila do LS MÚSICAS')
-        .setDescription(`**Tocando Agora:**\n[${currentTrack.title}](${currentTrack.url}) - \`${currentTrack.duration}\`\n\n**Próximas Músicas:**\n${queueString}`)
-        .setFooter({ text: `Total de ${queue.tracks.size} música(s) na fila` });
-
-      return interaction.reply({ embeds: [embed] });
-    }
-
-    if (commandName === 'nowplaying') {
-      const currentTrack = queue.currentTrack;
-      const embed = createNowPlayingEmbed(currentTrack, queue);
-      const components = createControlButtons(queue);
-      return interaction.reply({ embeds: [embed], components: components });
-    }
-
-    if (commandName === 'volume') {
-      const level = interaction.options.getInteger('nivel');
-      queue.node.setVolume(level);
-      return interaction.reply(`🔊 Volume ajustado para **${level}%**!`);
-    }
-
-    if (commandName === 'shuffle') {
-      queue.tracks.shuffle();
-      return interaction.reply('🔀 Fila embaralhada com sucesso!');
-    }
-
-    if (commandName === 'clear') {
-      queue.tracks.clear();
-      return interaction.reply('🗑️ Fila esvaziada com sucesso!');
-    }
-
-    if (commandName === 'loop') {
-      const modo = interaction.options.getString('modo');
-      if (modo === 'off') {
-        queue.setRepeatMode(QueueRepeatMode.OFF);
-        return interaction.reply('❌ Repetição desativada.');
-      } else if (modo === 'track') {
-        queue.setRepeatMode(QueueRepeatMode.TRACK);
-        return interaction.reply('🔂 Repetição da MÚSICA ATUAL ativada!');
-      } else if (modo === 'queue') {
-        queue.setRepeatMode(QueueRepeatMode.QUEUE);
-        return interaction.reply('🔁 Repetição da FILA INTEIRA ativada!');
-      }
-    }
-
-    if (commandName === 'remove') {
-      const num = interaction.options.getInteger('numero') - 1;
-      const trackToRemove = queue.tracks.toArray()[num];
-      if (!trackToRemove) {
-        return interaction.reply({ content: '❌ Número de posição inválido na fila!', ephemeral: true });
-      }
-      queue.node.remove(trackToRemove);
-      return interaction.reply(`🗑️ Removida: **${trackToRemove.title}** da fila.`);
-    }
-
-  } catch (error) {
-    console.error(`❌ Erro ao executar o comando ${commandName}:`, error);
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply('❌ Ocorreu um erro ao processar o comando.');
-    } else {
-      await interaction.reply({ content: '❌ Ocorreu um erro ao executar este comando.', ephemeral: true });
+      await interaction.update(createLSMessageEmbed(serverQueue));
+    } else if (customId === 'btn_skip') {
+      serverQueue.player.stop();
+      await interaction.reply({ content: '⏭️ Música pulada!', ephemeral: true });
+    } else if (customId === 'btn_loop') {
+      serverQueue.looping = !serverQueue.looping;
+      await interaction.update(createLSMessageEmbed(serverQueue));
+    } else if (customId === 'btn_queue') {
+      const list = serverQueue.songs.slice(0, 10).map((s, i) => (i === 0 ? '▶️ ' : '#' + i + ' ') + s.title).join('\n');
+      await interaction.reply({ content: '📋 **Fila Atual:**\n' + list, ephemeral: true });
+    } else if (customId === 'btn_stop') {
+      serverQueue.songs = [];
+      serverQueue.player.stop();
+      if (serverQueue.connection) serverQueue.connection.destroy();
+      queues.delete(guild.id);
+      await interaction.reply({ content: '⏹️ Bot desconectado e fila limpa!', ephemeral: true });
     }
   }
 });
 
-// Login do Bot no Discord
-client.login(TOKEN);
+// DESCONECTAR SE FICAR SOZINHO NO CANAL DE VOZ
+client.on('voiceStateUpdate', (oldState, newState) => {
+  const guildId = oldState.guild.id;
+  const serverQueue = queues.get(guildId);
+
+  if (serverQueue && serverQueue.voiceChannel) {
+    const membersInVc = serverQueue.voiceChannel.members.filter(m => !m.user.bot);
+    if (membersInVc.size === 0) {
+      setTimeout(() => {
+        const recheck = queues.get(guildId);
+        if (recheck && recheck.voiceChannel) {
+          const currentMembers = recheck.voiceChannel.members.filter(m => !m.user.bot);
+          if (currentMembers.size === 0) {
+            recheck.connection?.destroy();
+            queues.delete(guildId);
+            recheck.textChannel?.send('🚪 **[LS CUSTOMS]**: Canal de voz vazio! Bot desconectado automaticamente.');
+          }
+        }
+      }, 30000);
+    }
+  }
+});
+
+// LOGIN NO DISCORD
+if (!TOKEN) {
+  console.error('❌ ERRO: VARIÁVEL DISCORD_TOKEN NÃO CONFIGURADA NO .ENV!');
+} else {
+  client.login(TOKEN);
+}
