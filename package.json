@@ -1,7 +1,7 @@
 {
   "name": "ls-musicas",
   "version": "1.0.0",
-  "description": "LS Músicas - Bot Discord de Alta Qualidade estilo Jockie Music",
+  "description": "LS Músicas - Bot Discord estilo Jockie Music",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
