@@ -4,11 +4,17 @@
  *
  * Funcionalidades:
  * - Comandos Slash (/play, /pause, /resume, /skip, /stop, /queue, /nowplaying, /volume, /shuffle, /clear, /remove, /loop)
- * - Painel de Botões Interativo no embed Now Playing estilo Jockie
+ * - Painel de Botões Interativo no embed Now Playing estilo Jockie Music
  * - Auto-desconexão quando o canal de voz estiver vazio
  * - Suporte a pesquisa por nome e links (YouTube / Spotify / SoundCloud)
  * - Registro automático de Slash Commands na guild configurada
  */
+
+// Pre-carrega dependências de áudio nativas para evitar fallback legado
+try {
+  require('@discordjs/voice');
+  require('libsodium-wrappers');
+} catch (e) {}
 
 const { 
   Client, 
@@ -213,9 +219,9 @@ function createNowPlayingEmbed(track, queue) {
     .setURL(track.url)
     .setDescription(`**Artista/Canal:** ${track.author}\n**Duração:** \`${track.duration}\` | **Adicionado por:** ${track.requestedBy}`)
     .addFields(
-      { name: '🔊 Volume', value: `\`${currentVolume}%\``, inline: true },
-      { name: '🔁 Loop', value: `\`${loopStatus}\``, inline: true },
-      { name: '📋 Fila', value: `\`${queue.tracks.size} músicas pendentes\``, inline: true }
+      { name: '🔊 Volume', value: \`${currentVolume}%`\, inline: true },
+      { name: '🔁 Loop', value: \`${loopStatus}\`, inline: true },
+      { name: '📋 Fila', value: \`${queue.tracks.size} músicas pendentes\`, inline: true }
     )
     .setThumbnail(track.thumbnail || client.user.displayAvatarURL())
     .setFooter({ text: 'LS Músicas • Estilo Jockie Music • Sistema de Alta Qualidade', iconURL: client.user.displayAvatarURL() })
@@ -239,7 +245,7 @@ player.events.on('playerStart', (queue, track) => {
 
       collector.on('collect', async (interaction) => {
         if (!interaction.member.voice.channel || interaction.member.voice.channel.id !== queue.channel.id) {
-          return interaction.reply({ content: '❌ Você precisa estar no mesmo canal de voz que o bot para usar os controles!', flags: 64 });
+          return interaction.reply({ content: '❌ Você precisa estar no mesmo canal de voz que o bot para usar os controles!', ephemeral: true });
         }
 
         await interaction.deferUpdate();
@@ -251,17 +257,17 @@ player.events.on('playerStart', (queue, track) => {
 
           case 'btn_skip':
             queue.node.skip();
-            interaction.followUp({ content: '⏭️ Música pulada com sucesso!', flags: 64 });
+            interaction.followUp({ content: '⏭️ Música pulada com sucesso!', ephemeral: true });
             break;
 
           case 'btn_stop':
             queue.delete();
-            interaction.followUp({ content: '⏹️ Reprodução parada e fila limpa!', flags: 64 });
+            interaction.followUp({ content: '⏹️ Reprodução parada e fila limpa!', ephemeral: true });
             break;
 
           case 'btn_shuffle':
             queue.tracks.shuffle();
-            interaction.followUp({ content: '🔀 Fila embaralhada!', flags: 64 });
+            interaction.followUp({ content: '🔀 Fila embaralhada!', ephemeral: true });
             break;
 
           case 'btn_loop':
@@ -271,7 +277,7 @@ player.events.on('playerStart', (queue, track) => {
               ? QueueRepeatMode.QUEUE 
               : QueueRepeatMode.OFF;
             queue.setRepeatMode(nextMode);
-            interaction.followUp({ content: `🔁 Modo de repetição alterado!`, flags: 64 });
+            interaction.followUp({ content: `🔁 Modo de repetição alterado!`, ephemeral: true });
             break;
 
           case 'btn_vol_down':
@@ -294,13 +300,13 @@ player.events.on('playerStart', (queue, track) => {
                   .setDescription(queueList)
                   .setFooter({ text: `Total: ${queue.tracks.size} músicas na fila` })
               ],
-              flags: 64
+              ephemeral: true
             });
             break;
 
           case 'btn_clear':
             queue.tracks.clear();
-            interaction.followUp({ content: '🗑️ Fila limpa com sucesso!', flags: 64 });
+            interaction.followUp({ content: '🗑️ Fila limpa com sucesso!', ephemeral: true });
             break;
         }
 
@@ -309,7 +315,7 @@ player.events.on('playerStart', (queue, track) => {
           const updatedButtons = createControlButtons(queue);
           await msg.edit({ embeds: [updatedEmbed], components: updatedButtons });
         } catch (e) {
-          // Ignora caso mensagem apagada
+          // Ignora caso mensagem seja apagada
         }
       });
     }).catch(console.error);
@@ -383,7 +389,7 @@ client.on('interactionCreate', async (interaction) => {
   const voiceChannel = member.voice.channel;
 
   if (!voiceChannel && ['play', 'pause', 'resume', 'skip', 'stop', 'volume', 'shuffle', 'clear', 'loop'].includes(commandName)) {
-    return interaction.reply({ content: '❌ Você precisa estar conectado a um canal de voz para usar este comando!', flags: 64 });
+    return interaction.reply({ content: '❌ Você precisa estar conectado a um canal de voz para usar este comando!', ephemeral: true });
   }
 
   try {
@@ -437,7 +443,7 @@ client.on('interactionCreate', async (interaction) => {
 
     if (!queue || !queue.isPlaying()) {
       if (['pause', 'resume', 'skip', 'stop', 'volume', 'nowplaying', 'shuffle', 'clear', 'loop', 'remove'].includes(commandName)) {
-        return interaction.reply({ content: '❌ Não há nenhuma música tocando no momento neste servidor!', flags: 64 });
+        return interaction.reply({ content: '❌ Não há nenhuma música tocando no momento neste servidor!', ephemeral: true });
       }
     }
 
@@ -517,7 +523,7 @@ client.on('interactionCreate', async (interaction) => {
       const num = interaction.options.getInteger('numero') - 1;
       const trackToRemove = queue.tracks.toArray()[num];
       if (!trackToRemove) {
-        return interaction.reply({ content: '❌ Número de posição inválido na fila!', flags: 64 });
+        return interaction.reply({ content: '❌ Número de posição inválido na fila!', ephemeral: true });
       }
       queue.node.remove(trackToRemove);
       return interaction.reply(`🗑️ Removida: **${trackToRemove.title}** da fila.`);
@@ -528,7 +534,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply('❌ Ocorreu um erro ao processar o comando.');
     } else {
-      await interaction.reply({ content: '❌ Ocorreu um erro ao executar este comando.', flags: 64 });
+      await interaction.reply({ content: '❌ Ocorreu um erro ao executar este comando.', ephemeral: true });
     }
   }
 });
