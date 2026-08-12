@@ -1,6 +1,7 @@
 /**
- * LS CUSTOMS MUSIC BOT v2.5
- * Bot de Música Simples para Discord - Servidor LS CUSTOMS (GTA RP)
+ * LS CUSTOMS MUSIC BOT v3.0 (SUPER ROBUSTO)
+ * Bot de Música para Discord - Servidor LS CUSTOMS (GTA RP)
+ * Suporta Comandos Slash (/) e Comandos de Texto (!play, !p, ls!play)
  * Compatível com Node.js 20+ e Hospedagem no Railway / Render / VPS
  */
 
@@ -29,11 +30,11 @@ const queues = new Map();
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Toca uma música no canal de voz da LS Customs')
+    .setDescription('Toca uma música do YouTube no canal de voz da LS Customs')
     .addStringOption(option =>
       option.setName('musica')
-        .setDescription('Nome da música, artista ou link do YouTube/Spotify')
-        .setRequired(true)),
+        .setDescription('Nome da música, artista ou link do YouTube')
+        .setRequired(false)),
 
   new SlashCommandBuilder()
     .setName('pause')
@@ -79,9 +80,11 @@ const commands = [
 ].map(cmd => cmd.toJSON());
 
 // REGISTRAR COMANDOS AO INICIAR
-client.once('ready', async () => {
+const onReadyHandler = async () => {
   console.log("🔧 LS CUSTOMS MUSIC BOT ON! Logado como " + client.user.tag);
-  client.user.setActivity('🔧 Som na Garagem | /play', { type: 2 });
+  try {
+    client.user.setActivity('🔧 Som na Garagem | /play ou !play', { type: 2 });
+  } catch (e) {}
 
   if (CLIENT_ID && TOKEN) {
     const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -93,7 +96,10 @@ client.once('ready', async () => {
       console.error('❌ Erro ao registrar comandos:', err);
     }
   }
-});
+};
+
+client.once('ready', onReadyHandler);
+client.once('clientReady', onReadyHandler);
 
 // CRIAR EMBED COM PAINEL DE BOTÕES TEMÁTICO LS CUSTOMS
 function createLSMessageEmbed(guildQueue) {
@@ -120,7 +126,7 @@ function createLSMessageEmbed(guildQueue) {
     .setFooter({ text: 'LS Customs - O melhor tuning e som de Los Santos! 🛠️' })
     .setTimestamp();
 
-  // Linha de Botões de Controle (⏮️ ⏸️ ▶️ ⏭️ 🔁 ⏹️)
+  // Linha de Botões de Controle
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('btn_pause_resume').setEmoji(guildQueue.playing ? '⏸️' : '▶️').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('btn_skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
@@ -141,7 +147,7 @@ async function playNext(guildId) {
       setTimeout(() => {
         const checkQueue = queues.get(guildId);
         if (!checkQueue || checkQueue.songs.length === 0) {
-          serverQueue.connection.destroy();
+          try { serverQueue.connection.destroy(); } catch (e) {}
           queues.delete(guildId);
           serverQueue.textChannel.send('🚗 **[LS CUSTOMS]**: Fila vazia! Rádio desligada para economizar bateria da garagem.');
         }
@@ -165,18 +171,97 @@ async function playNext(guildId) {
       serverQueue.controlMessage = await serverQueue.textChannel.send(panel);
     }
   } catch (error) {
-    console.error('Erro ao tocar música:', error);
+    console.error('Erro ao carregar stream:', error);
     serverQueue.textChannel.send('⚠️ Erro ao carregar stream de **' + song.title + '**. Pulando para a próxima...');
     serverQueue.songs.shift();
     playNext(guildId);
   }
 }
 
-// PROCESSAR COMANDOS SLASH
+// FUNÇÃO CORE DE ADICIONAR/TOCAR MÚSICA
+async function executePlayCommand(guild, voiceChannel, textChannel, requestedBy, queryInput) {
+  let query = (queryInput || '').trim();
+  let defaultUsed = false;
+
+  if (!query) {
+    query = "West Coast Hip Hop V8 LS Customs";
+    defaultUsed = true;
+  }
+
+  let serverQueue = queues.get(guild.id);
+
+  let videoUrl = query;
+  let videoTitle = query;
+  let videoDuration = '3:30';
+  let videoThumb = 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=400&q=80';
+
+  const searchResult = await yts(query);
+
+  if (searchResult && searchResult.videos && searchResult.videos.length > 0) {
+    const topVideo = searchResult.videos[0];
+    videoTitle = topVideo.title;
+    videoUrl = topVideo.url;
+    videoDuration = topVideo.timestamp || '3:30';
+    videoThumb = topVideo.thumbnail || videoThumb;
+  } else if (query.startsWith('http://') || query.startsWith('https://')) {
+    videoUrl = query;
+    videoTitle = 'Música do YouTube';
+  } else {
+    throw new Error('Nenhuma música encontrada para: ' + query);
+  }
+
+  const song = {
+    title: videoTitle,
+    url: videoUrl,
+    duration: videoDuration,
+    thumbnail: videoThumb,
+    requestedBy: requestedBy || 'Mecânico'
+  };
+
+  if (!serverQueue) {
+    const queueConstruct = {
+      textChannel: textChannel,
+      voiceChannel: voiceChannel,
+      connection: null,
+      player: createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } }),
+      songs: [song],
+      volume: 50,
+      playing: true,
+      looping: false,
+      controlMessage: null
+    };
+
+    queues.set(guild.id, queueConstruct);
+
+    const connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: guild.id,
+      adapterCreator: guild.voiceAdapterCreator,
+    });
+
+    queueConstruct.connection = connection;
+
+    queueConstruct.player.on(AudioPlayerStatus.Idle, () => {
+      if (!queueConstruct.looping) {
+        queueConstruct.songs.shift();
+      }
+      playNext(guild.id);
+    });
+
+    playNext(guild.id);
+    const defaultNotice = defaultUsed ? " *(Música padrão tocada porque nenhum nome/link foi informado)*" : "";
+    return '🔧 **Tocando na rádio:** **' + song.title + '**!' + defaultNotice;
+  } else {
+    serverQueue.songs.push(song);
+    return '📋 **Adicionado à fila da LS Customs:** **' + song.title + '** (Posição #' + serverQueue.songs.length + ')';
+  }
+}
+
+// 1. PROCESSAR COMANDOS SLASH (/)
 client.on('interactionCreate', async interaction => {
   if (interaction.isChatInputCommand()) {
     const { commandName, options, guild, member } = interaction;
-    const voiceChannel = member.voice.channel;
+    const voiceChannel = member?.voice?.channel;
 
     if (!voiceChannel && ['play', 'pause', 'resume', 'skip', 'stop', 'volume', 'loop', 'shuffle'].includes(commandName)) {
       return interaction.reply({ content: '❌ **Você precisa estar em um canal de voz** da LS Customs para controlar a rádio!', ephemeral: true });
@@ -187,88 +272,18 @@ client.on('interactionCreate', async interaction => {
     // /PLAY
     if (commandName === 'play') {
       await interaction.deferReply();
-      const query = options.getString('musica');
 
-      if (!query || !query.trim()) {
-        return interaction.editReply('❌ Por favor informe o nome ou link da música!');
+      let rawQuery = options.getString('musica') || options.getString('query') || options.getString('song');
+      if (!rawQuery && interaction.options && interaction.options.data && interaction.options.data.length > 0) {
+        rawQuery = String(interaction.options.data[0].value || '');
       }
 
       try {
-        let videoUrl = query.trim();
-        let videoTitle = query.trim();
-        let videoDuration = '3:30';
-        let videoThumb = 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=400&q=80';
-
-        // Usar yt-search seguro para encontrar resultados no YouTube
-        if (!videoUrl.startsWith('http://') && !videoUrl.startsWith('https://')) {
-          const searchResult = await yts(videoUrl);
-          if (searchResult && searchResult.videos && searchResult.videos.length > 0) {
-            const topVideo = searchResult.videos[0];
-            videoTitle = topVideo.title;
-            videoUrl = topVideo.url;
-            videoDuration = topVideo.timestamp || '3:30';
-            videoThumb = topVideo.thumbnail || videoThumb;
-          } else {
-            return interaction.editReply('❌ Nenhuma música encontrada no YouTube para: **' + query + '**');
-          }
-        } else {
-          // Se for URL direta, buscar dados pelo yts
-          const searchResult = await yts(videoUrl);
-          if (searchResult && searchResult.videos && searchResult.videos.length > 0) {
-            const topVideo = searchResult.videos[0];
-            videoTitle = topVideo.title;
-            videoDuration = topVideo.timestamp || videoDuration;
-            videoThumb = topVideo.thumbnail || videoThumb;
-          }
-        }
-
-        const song = {
-          title: videoTitle,
-          url: videoUrl,
-          duration: videoDuration,
-          thumbnail: videoThumb,
-          requestedBy: member.user.username
-        };
-
-        if (!serverQueue) {
-          const queueConstruct = {
-            textChannel: interaction.channel,
-            voiceChannel: voiceChannel,
-            connection: null,
-            player: createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } }),
-            songs: [song],
-            volume: 50,
-            playing: true,
-            looping: false,
-            controlMessage: null
-          };
-
-          queues.set(guild.id, queueConstruct);
-
-          const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: guild.id,
-            adapterCreator: guild.voiceAdapterCreator,
-          });
-
-          queueConstruct.connection = connection;
-
-          queueConstruct.player.on(AudioPlayerStatus.Idle, () => {
-            if (!queueConstruct.looping) {
-              queueConstruct.songs.shift();
-            }
-            playNext(guild.id);
-          });
-
-          playNext(guild.id);
-          await interaction.editReply('🔧 **Tocando na rádio:** **' + song.title + '**!');
-        } else {
-          serverQueue.songs.push(song);
-          await interaction.editReply('📋 **Adicionado à fila da LS Customs:** **' + song.title + '** (Posição #' + serverQueue.songs.length + ')');
-        }
+        const msg = await executePlayCommand(guild, voiceChannel, interaction.channel, member.user.username, rawQuery);
+        await interaction.editReply(msg);
       } catch (err) {
-        console.error("Erro na busca do YouTube:", err);
-        return interaction.editReply('⚠️ Ocorreu um erro ao buscar a música no YouTube. Verifique o nome/link e tente novamente!');
+        console.error("Erro /play:", err);
+        await interaction.editReply('⚠️ Ocorreu um erro ao buscar no YouTube: ' + err.message);
       }
     }
 
@@ -300,7 +315,7 @@ client.on('interactionCreate', async interaction => {
       if (!serverQueue) return interaction.reply({ content: '⚠️ Nenhuma música está tocando!', ephemeral: true });
       serverQueue.songs = [];
       serverQueue.player.stop();
-      if (serverQueue.connection) serverQueue.connection.destroy();
+      if (serverQueue.connection) { try { serverQueue.connection.destroy(); } catch (e) {} }
       queues.delete(guild.id);
       interaction.reply('⏹️ **Rádio desligada e fila limpa por completo!**');
     }
@@ -308,7 +323,6 @@ client.on('interactionCreate', async interaction => {
     // /QUEUE
     else if (commandName === 'queue') {
       if (!serverQueue || serverQueue.songs.length === 0) return interaction.reply('📋 A fila da oficina está vazia no momento.');
-
       const list = serverQueue.songs.slice(0, 10).map((s, i) => (i === 0 ? '▶️ **Tocando Agora:** ' : '#' + i + ' ') + s.title + ' (pedida por ' + s.requestedBy + ')').join('\n');
       interaction.reply('📋 **FILA DA GARAGEM LS CUSTOMS:**\n\n' + list);
     }
@@ -368,10 +382,53 @@ client.on('interactionCreate', async interaction => {
     } else if (customId === 'btn_stop') {
       serverQueue.songs = [];
       serverQueue.player.stop();
-      if (serverQueue.connection) serverQueue.connection.destroy();
+      if (serverQueue.connection) { try { serverQueue.connection.destroy(); } catch (e) {} }
       queues.delete(guild.id);
       await interaction.reply({ content: '⏹️ Bot desconectado e fila limpa!', ephemeral: true });
     }
+  }
+});
+
+// 2. PROCESSAR COMANDOS DE TEXTO TRADICIONAIS (!play, !p, ls!play)
+client.on('messageCreate', async message => {
+  if (message.author.bot || !message.guild) return;
+
+  const prefixes = ['!', 'ls!', 'p!'];
+  const prefix = prefixes.find(p => message.content.toLowerCase().startsWith(p));
+  if (!prefix) return;
+
+  const args = message.content.slice(prefix.length).trim().split(/ +/);
+  const cmd = args.shift().toLowerCase();
+
+  if (['play', 'p'].includes(cmd)) {
+    const voiceChannel = message.member?.voice?.channel;
+    if (!voiceChannel) {
+      return message.reply('❌ **Você precisa estar em um canal de voz** da LS Customs para tocar música!');
+    }
+
+    const query = args.join(' ');
+    const loadingMsg = await message.reply('🔎 **LS CUSTOMS**: Buscando no YouTube...');
+
+    try {
+      const result = await executePlayCommand(message.guild, voiceChannel, message.channel, message.author.username, query);
+      await loadingMsg.edit(result);
+    } catch (err) {
+      console.error('Erro no comando de texto !play:', err);
+      await loadingMsg.edit('⚠️ Erro ao buscar música no YouTube: ' + err.message);
+    }
+  } else if (['skip', 'next', 's'].includes(cmd)) {
+    const serverQueue = queues.get(message.guild.id);
+    if (!serverQueue || serverQueue.songs.length === 0) return message.reply('⚠️ Fila vazia!');
+    serverQueue.player.stop();
+    message.reply('⏭️ Música pulada!');
+  } else if (['stop', 'leave'].includes(cmd)) {
+    const serverQueue = queues.get(message.guild.id);
+    if (!serverQueue) return message.reply('⚠️ Nenhuma rádio ativa.');
+    serverQueue.songs = [];
+    serverQueue.player.stop();
+    if (serverQueue.connection) { try { serverQueue.connection.destroy(); } catch (e) {} }
+    queues.delete(message.guild.id);
+    message.reply('⏹️ Rádio desligada e fila limpa!');
   }
 });
 
@@ -388,7 +445,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
         if (recheck && recheck.voiceChannel) {
           const currentMembers = recheck.voiceChannel.members.filter(m => !m.user.bot);
           if (currentMembers.size === 0) {
-            recheck.connection?.destroy();
+            try { recheck.connection?.destroy(); } catch (e) {}
             queues.delete(guildId);
             recheck.textChannel?.send('🚪 **[LS CUSTOMS]**: Canal de voz vazio! Bot desconectado automaticamente.');
           }
