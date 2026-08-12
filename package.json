@@ -19,6 +19,3 @@
     "play-dl": "^1.9.7"
   }
 }
-Node.js 20.x
-Engine travada em Node 20.x no package.json para máxima estabilidade no Railway.
-
