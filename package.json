@@ -1,7 +1,7 @@
 {
   "name": "ls-customs-music-bot",
   "version": "1.0.0",
-  "description": "Bot de Música Simples para o Discord do Servidor LS CUSTOMS GTA RP",
+  "description": "Bot de Música para o Discord do Servidor LS CUSTOMS GTA RP",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
